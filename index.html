@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>RHQC Mapping Prototype – Advanced</title>
+  <title>RHQC Mapping Prototype – V3 Grid Overlay</title>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <!-- Leaflet CSS -->
@@ -77,6 +77,15 @@
           font-family: Arial, sans-serif;
           font-size: 14px;
       }
+      /* Style for grid labels drawn on the V3 grid overlay */
+      .grid-label {
+          font-size: 12px;
+          font-weight: bold;
+          color: #000;
+          background: rgba(255,255,255,0.7);
+          padding: 2px 4px;
+          border-radius: 3px;
+      }
   </style>
 </head>
 <body>
@@ -113,7 +122,10 @@
   var drawnItems = new L.FeatureGroup();
   map.addLayer(drawnItems);
 
-  // Initialize the Leaflet Draw control and pass it the FeatureGroup of editable layers
+  // Layer group to store the V3 grid overlay (the recursive quadrant display)
+  var v3GridLayer = new L.LayerGroup().addTo(map);
+
+  // Initialize the Leaflet Draw control
   var drawControl = new L.Control.Draw({
       draw: {
           polyline: false,
@@ -140,7 +152,7 @@
   var currentLocationMarker = null;
   var currentRouteLine = null;
 
-  // Request user's current location and update it continuously using the Geolocation API
+  // Request user's current location using Geolocation API (updates continuously)
   if ("geolocation" in navigator) {
       navigator.geolocation.watchPosition(function(position) {
           var lat = position.coords.latitude;
@@ -169,54 +181,83 @@
       }
   });
 
-  // Function to compute the RHQC code for a coordinate given a bounding box and max level.
-  // The bounding box is in the format [[south, west], [north, east]]
-  function getRHQCCode(lat, lng, bounds, maxLevel) {
-      var code = "";
-      var currentBounds = JSON.parse(JSON.stringify(bounds)); // clone bounds
+  // --- V3 RHQC Grid Overlay Functions ---
 
-      for (var level = 1; level <= maxLevel; level++) {
-          var south = currentBounds[0][0],
-              west = currentBounds[0][1],
-              north = currentBounds[1][0],
-              east = currentBounds[1][1];
+  // Return V3 color based on level using a predetermined palette (V3 design)
+  function getV3ColorForLevel(level) {
+      // Colors chosen to match a typical V3 color palette; adjust as needed
+      var v3Colors = ["#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00"];
+      return v3Colors[level - 1] || "#000000";
+  }
+
+  // Recursively deploy the V3 grid overlay given bounds, base code, current level, and maxLevel.
+  function deployV3Grid(bounds, code, level, maxLevel) {
+      // Draw the current rectangle with border color from V3 system and slight fill
+      var rect = L.rectangle(bounds, {
+          color: getV3ColorForLevel(level),
+          weight: 1,
+          fillOpacity: 0.15
+      });
+      rect.addTo(v3GridLayer);
+
+      // If not at max level, subdivide further
+      if (level < maxLevel) {
+          var south = bounds[0][0],
+              west = bounds[0][1],
+              north = bounds[1][0],
+              east = bounds[1][1];
           var midLat = (south + north) / 2;
           var midLng = (west + east) / 2;
 
-          // Determine quadrant:
-          // "1" for NW, "2" for NE, "3" for SW, "4" for SE.
-          if (lat >= midLat && lng <= midLng) {
-              code += "1";
-              currentBounds = [[midLat, west], [north, midLng]];
-          } else if (lat >= midLat && lng > midLng) {
-              code += "2";
-              currentBounds = [[midLat, midLng], [north, east]];
-          } else if (lat < midLat && lng <= midLng) {
-              code += "3";
-              currentBounds = [[south, west], [midLat, midLng]];
-          } else {
-              code += "4";
-              currentBounds = [[south, midLng], [midLat, east]];
-          }
+          // Subdivide into four quadrants and recurse:
+          deployV3Grid([[midLat, west], [north, midLng]], code + "1", level + 1, maxLevel); // NW
+          deployV3Grid([[midLat, midLng], [north, east]], code + "2", level + 1, maxLevel); // NE
+          deployV3Grid([[south, west], [midLat, midLng]], code + "3", level + 1, maxLevel); // SW
+          deployV3Grid([[south, midLng], [midLat, east]], code + "4", level + 1, maxLevel); // SE
+      } else {
+          // At max level, add a label with the grid code in the center of this quadrant
+          var centerLat = (bounds[0][0] + bounds[1][0]) / 2;
+          var centerLng = (bounds[0][1] + bounds[1][1]) / 2;
+          L.marker([centerLat, centerLng], {
+              icon: L.divIcon({
+                  className: 'grid-label',
+                  html: code,
+                  iconSize: [30, 15]
+              })
+          }).addTo(v3GridLayer);
       }
-      return code;
   }
+
+  // --- End of V3 Grid Functions ---
 
   // Variable to store the drawn rectangle (grid box)
   var gridBox = null;
 
-  // When a new rectangle is created via Leaflet.draw, add it to drawnItems
-  map.on(L.Draw.Event.CREATED, function (event) {
+  // When a new rectangle is created via Leaflet.draw, add it to drawnItems, hide its default styling,
+  // and deploy the V3 RHQC grid overlay.
+  map.on(L.Draw.Event.CREATED, function(event) {
       var layer = event.layer;
       drawnItems.clearLayers(); // only one grid box at a time
       drawnItems.addLayer(layer);
+      // Hide the default drawn rectangle so the V3 grid takes visual priority
+      layer.setStyle({ opacity: 0, fillOpacity: 0 });
       gridBox = layer;
+      // Clear any previous grid overlay and deploy the new V3 grid overlay based on the drawn rectangle bounds
+      v3GridLayer.clearLayers();
+      var bounds = gridBox.getBounds();
+      // Convert Leaflet bounds to an array format [[south, west], [north, east]]
+      var gridBounds = [[bounds.getSouth(), bounds.getWest()], [bounds.getNorth(), bounds.getEast()]];
+      deployV3Grid(gridBounds, "", 1, 5);
       fetchAndDisplayRoads();
   });
 
-  // When the rectangle is edited, fetch roads again
+  // When the rectangle is edited, update the grid overlay
   map.on('draw:edited', function(e) {
       gridBox = drawnItems.getLayers()[0];
+      v3GridLayer.clearLayers();
+      var bounds = gridBox.getBounds();
+      var gridBounds = [[bounds.getSouth(), bounds.getWest()], [bounds.getNorth(), bounds.getEast()]];
+      deployV3Grid(gridBounds, "", 1, 5);
       fetchAndDisplayRoads();
   });
 
@@ -239,7 +280,7 @@
           });
   });
 
-  // Function to fetch roads within the grid box using the Overpass API
+  // Function to fetch roads within the grid box using Overpass API
   function fetchAndDisplayRoads() {
       if (!gridBox) {
           document.getElementById("roadsContainer").innerHTML = "No grid box defined.";
@@ -271,7 +312,7 @@ out center;`;
       });
   }
 
-  // Process road data from the Overpass API response
+  // Process road data from Overpass API response
   function processRoadData(elements, gridBounds) {
       var roads = [];
       elements.forEach(function(elem) {
@@ -294,6 +335,7 @@ out center;`;
       });
       var html = "";
       roads.forEach(function(road) {
+          // Compute the RHQC code based on the road's location using the grid box bounds
           var code = getRHQCCode(road.lat, road.lon, [[gridBounds.getSouth(), gridBounds.getWest()], [gridBounds.getNorth(), gridBounds.getEast()]], 5);
           html += "<div class='road-item' onclick='zoomToRoad(" + road.lat + ", " + road.lon + ")'>";
           html += "<span class='road-code'>" + code + "</span> " + road.name;
@@ -303,8 +345,38 @@ out center;`;
       document.getElementById("roadsContainer").innerHTML = html;
   }
 
-  // Function to zoom to a road when its item is clicked and draw a route from the current location;
-  // Also minimizes (hides) the road list.
+  // Function to compute the RHQC code for a coordinate given a bounding box and max level.
+  function getRHQCCode(lat, lng, bounds, maxLevel) {
+      var code = "";
+      var currentBounds = JSON.parse(JSON.stringify(bounds)); // clone bounds
+
+      for (var level = 1; level <= maxLevel; level++) {
+          var south = currentBounds[0][0],
+              west = currentBounds[0][1],
+              north = currentBounds[1][0],
+              east = currentBounds[1][1];
+          var midLat = (south + north) / 2;
+          var midLng = (west + east) / 2;
+
+          if (lat >= midLat && lng <= midLng) {
+              code += "1";
+              currentBounds = [[midLat, west], [north, midLng]];
+          } else if (lat >= midLat && lng > midLng) {
+              code += "2";
+              currentBounds = [[midLat, midLng], [north, east]];
+          } else if (lat < midLat && lng <= midLng) {
+              code += "3";
+              currentBounds = [[south, west], [midLat, midLng]];
+          } else {
+              code += "4";
+              currentBounds = [[south, midLng], [midLat, east]];
+          }
+      }
+      return code;
+  }
+
+  // Function to zoom to a road when its item is clicked and draw a route from current location;
+  // Also automatically minimizes (hides) the road list panel.
   function zoomToRoad(lat, lon) {
       map.setView([lat, lon], 18);
       if (currentLocationMarker) {
@@ -314,18 +386,18 @@ out center;`;
       }
       L.circleMarker([lat, lon], { radius: 6, color: "#FF0000" }).addTo(map)
           .bindPopup("Road Location").openPopup();
-      // Minimize the road list automatically
+      // Automatically hide the road list panel when a road is clicked
       document.getElementById("roadList").style.display = "none";
       document.getElementById("roadListToggle").style.display = "block";
   }
 
-  // Toggle button inside the road list to close/hide the panel
+  // Toggle button inside the road list panel to close/hide it
   document.getElementById("toggleRoadListBtn").addEventListener("click", function() {
       document.getElementById("roadList").style.display = "none";
       document.getElementById("roadListToggle").style.display = "block";
   });
 
-  // Fixed button to show the road list when it is minimized
+  // Fixed button to show the road list when minimized
   document.getElementById("roadListToggle").addEventListener("click", function() {
       document.getElementById("roadList").style.display = "block";
       document.getElementById("roadListToggle").style.display = "none";
