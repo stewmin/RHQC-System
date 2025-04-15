@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>RHQC Mapping Prototype – Editable Fire Stations & Filter</title>
+  <title>RHQC Mapping Prototype – Editable Dispatch & Station Management</title>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <!-- Leaflet CSS -->
@@ -9,114 +9,114 @@
   <!-- Leaflet Draw CSS -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
   <style>
-      body { margin: 0; padding: 0; }
-      #map { position: absolute; top: 60px; bottom: 0; right: 0; left: 0; }
-      /* Controls (Address bar, Current Location, and Edit Page) */
-      #searchBar {
-          position: absolute;
-          top: 5px;
-          left: 10px;
-          z-index: 1200;
-          background: rgba(255,255,255,0.9);
-          padding: 8px;
-          border-radius: 4px;
-      }
-      /* Edit controls panel (visible only in edit mode) */
-      #editControls {
-          position: absolute;
-          top: 5px;
-          right: 10px;
-          z-index: 1200;
-          background: rgba(255,255,255,0.9);
-          padding: 8px;
-          border-radius: 4px;
-          display: none;
-      }
-      /* Road list side panel */
-      #roadList {
-          position: absolute;
-          top: 60px;
-          right: 0;
-          width: 300px;
-          max-height: calc(100% - 60px);
-          overflow-y: auto;
-          background: rgba(255,255,255,0.9);
-          z-index: 1100;
-          padding: 10px;
-          font-family: Arial, sans-serif;
-          font-size: 14px;
-      }
-      #roadList h3 {
-          margin: 0;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-      }
-      #roadList h3 button {
-          font-size: 12px;
-          padding: 2px 4px;
-          cursor: pointer;
-      }
-      /* Filter input above the road list */
-      #roadFilter {
-          width: 100%;
-          margin: 5px 0;
-          padding: 4px;
-          box-sizing: border-box;
-          font-size: 13px;
-      }
-      .road-item {
-          padding: 5px;
-          border-bottom: 1px solid #ccc;
-          cursor: pointer;
-      }
-      .road-item:hover { background: #eee; }
-      .road-code {
-          font-weight: bold;
-          color: #333;
-          background: #f0f0f0;
-          padding: 2px 4px;
-          border-radius: 3px;
-          margin-right: 5px;
-      }
-      .road-info {
-          font-size: 11px;
-          color: #555;
-          margin-top: 2px;
-      }
-      /* Tiny blue arrow for user direction indicator */
-      .user-direction {
-          color: blue;
-          font-size: 12px;
-          margin-left: 5px;
-      }
-      /* Toggle button for road list panel */
-      #roadListToggle {
-          position: absolute;
-          top: 60px;
-          right: 0;
-          z-index: 1200;
-          display: none;
-          background: rgba(255,255,255,0.9);
-          padding: 5px 10px;
-          border-radius: 0 0 0 5px;
-          cursor: pointer;
-          font-family: Arial, sans-serif;
-          font-size: 14px;
-      }
+    body { margin: 0; padding: 0; }
+    #map { position: absolute; top: 60px; bottom: 0; right: 0; left: 0; }
+    /* Top controls: address bar, current location, and edit page */
+    #searchBar {
+      position: absolute;
+      top: 5px;
+      left: 10px;
+      z-index: 1200;
+      background: rgba(255,255,255,0.9);
+      padding: 8px;
+      border-radius: 4px;
+    }
+    /* Edit controls panel; visible only in edit mode */
+    #editControls {
+      position: absolute;
+      top: 5px;
+      right: 10px;
+      z-index: 1200;
+      background: rgba(255,255,255,0.9);
+      padding: 8px;
+      border-radius: 4px;
+      display: none;
+    }
+    /* Road list panel */
+    #roadList {
+      position: absolute;
+      top: 60px;
+      right: 0;
+      width: 300px;
+      max-height: calc(100% - 60px);
+      overflow-y: auto;
+      background: rgba(255,255,255,0.9);
+      z-index: 1100;
+      padding: 10px;
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+    }
+    #roadList h3 {
+      margin: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    #roadList h3 button {
+      font-size: 12px;
+      padding: 2px 4px;
+      cursor: pointer;
+    }
+    /* Filter input above road list */
+    #roadFilter {
+      width: 100%;
+      margin: 5px 0;
+      padding: 4px;
+      box-sizing: border-box;
+      font-size: 13px;
+    }
+    .road-item {
+      padding: 5px;
+      border-bottom: 1px solid #ccc;
+      cursor: pointer;
+    }
+    .road-item:hover { background: #eee; }
+    .road-code {
+      font-weight: bold;
+      color: #333;
+      background: #f0f0f0;
+      padding: 2px 4px;
+      border-radius: 3px;
+      margin-right: 5px;
+    }
+    .road-info {
+      font-size: 11px;
+      color: #555;
+      margin-top: 2px;
+    }
+    /* Tiny blue arrow indicating direction from user location */
+    .user-direction {
+      color: blue;
+      font-size: 12px;
+      margin-left: 5px;
+    }
+    /* Toggle button for road list panel */
+    #roadListToggle {
+      position: absolute;
+      top: 60px;
+      right: 0;
+      z-index: 1200;
+      display: none;
+      background: rgba(255,255,255,0.9);
+      padding: 5px 10px;
+      border-radius: 0 0 0 5px;
+      cursor: pointer;
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+    }
   </style>
 </head>
 <body>
   <div id="searchBar">
       <input type="text" id="addressInput" placeholder="Enter your address" size="30" />
       <button id="searchBtn">Search</button>
-      <!-- Current Location button triggers location prompt (required on iOS) -->
+      <!-- This button triggers location permission (iOS requires a tap) -->
       <button id="currentLocationBtn">Current Location</button>
-      <!-- Edit Page button -->
       <button id="editPageBtn">Edit Page</button>
   </div>
   <div id="editControls">
       <button id="addStationBtn">Add Station</button>
+      <button id="deleteStationBtn">Delete Station</button>
       <span>Edit Mode Active</span>
   </div>
   <div id="map"></div>
@@ -130,18 +130,17 @@
   </div>
   <div id="roadListToggle">Show Road List</div>
 
-  <!-- Leaflet and Draw libraries -->
+  <!-- Leaflet & Draw libraries -->
   <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
   <script>
   /***********************
-   * GLOBAL VARIABLES & FLAGS
+   * GLOBAL VARIABLES & INITIAL SETUP
    ***********************/
-  var isEditing = false; // Edit mode flag
+  var isEditing = false;
+  var deleteStationMode = false; // Toggles deletion mode for fire stations
+
   var map = L.map('map').setView([36.85, -87.55], 13);
-  /***********************
-   * MAP INITIALIZATION
-   ***********************/
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
@@ -165,7 +164,7 @@
       var layer = event.layer;
       drawnItems.clearLayers();
       drawnItems.addLayer(layer);
-      // Make the grid box invisible (its bounds are used for calculations)
+      // Make grid box invisible (only its bounds are used)
       layer.setStyle({ opacity: 0, fillOpacity: 0 });
       gridBox = layer;
       fetchAndDisplayRoads();
@@ -188,9 +187,8 @@
       navigator.geolocation.getCurrentPosition(function(position){
           var lat = position.coords.latitude, lon = position.coords.longitude;
           if (!currentLocationMarker) {
-              currentLocationMarker = L.circleMarker([lat, lon], { 
-                  radius: 8, color: "#0000FF", fillColor: "#0000FF", fillOpacity: 1 
-              }).addTo(map).bindPopup("Your current location");
+              currentLocationMarker = L.circleMarker([lat, lon], { radius: 8, color: "#0000FF", fillColor: "#0000FF", fillOpacity: 1 })
+                  .addTo(map).bindPopup("Your current location");
           } else {
               currentLocationMarker.setLatLng([lat, lon]);
           }
@@ -208,32 +206,35 @@
   }
 
   /***********************
-   * STATIC FIRE STATION DATA
+   * FIRE STATION DATA (Initially Empty – User Adds New Ones)
    ***********************/
-  // These fire station addresses come from your list. Update coordinates if verified.
-  var fireStations = [
-      { lat: 36.8600, lon: -87.5340, name: "Station 1 – 112 Phillip Meacham Way" },
-      { lat: 36.8650, lon: -87.5300, name: "Station 2 – 1188 Skyline Dr" },
-      { lat: 36.8750, lon: -87.5600, name: "Station 3 – 3203 Canton Pike" },
-      { lat: 36.8920, lon: -87.5900, name: "Station 4 – 9503 Hopkinsville Byp" }
-  ];
-  // Add markers for the stations (as red squares) to the map.
+  var fireStations = [];
+  // Update station markers on the map.
   function updateStationMarkers() {
-      // Remove existing station markers
-      if(window.stationMarkers){
-          window.stationMarkers.forEach(function(marker){ map.removeLayer(marker); });
+      if (window.stationMarkers) {
+          window.stationMarkers.forEach(function(marker) { map.removeLayer(marker); });
       }
       window.stationMarkers = [];
-      fireStations.forEach(function(station) {
-          // Using a simple red square marker via a divIcon.
+      fireStations.forEach(function(station, index) {
           var redSquareIcon = L.divIcon({
               html: '<div style="width:16px;height:16px;background:red;border:2px solid darkred;"></div>',
-              iconSize: [20, 20],
+              iconSize: [20,20],
               className: ''
           });
           var marker = L.marker([station.lat, station.lon], { icon: redSquareIcon })
               .addTo(map)
               .bindPopup(station.name);
+          // In delete mode, clicking a station marker will prompt deletion.
+          marker.on('click', function(e) {
+              if (deleteStationMode) {
+                  if (confirm("Delete station: " + station.name + "?")) {
+                      // Remove station from array and update markers.
+                      fireStations.splice(index, 1);
+                      updateStationMarkers();
+                      alert("Station deleted.");
+                  }
+              }
+          });
           window.stationMarkers.push(marker);
       });
   }
@@ -247,24 +248,33 @@
       if (pwd === "Password911") {
           isEditing = true;
           document.getElementById("editControls").style.display = "block";
-          alert("Edit mode activated. Click 'Add Station' and then click on the map to add a new fire station.");
+          alert("Edit mode activated. You can now add or delete stations.");
       } else {
           alert("Incorrect password.");
       }
   });
-  // When in edit mode, clicking "Add Station" allows adding a fire station marker.
   document.getElementById("addStationBtn").addEventListener("click", function(){
       if (!isEditing) return;
       alert("After clicking OK, click on the map where you want to add a fire station.");
       map.once('click', function(e){
           var lat = e.latlng.lat, lon = e.latlng.lng;
-          var stationName = prompt("Enter station name (or leave blank):", "New Station");
+          var stationName = prompt("Enter station name:", "New Station");
           if (!stationName) { stationName = "New Station"; }
-          // Add station to static array.
           fireStations.push({ lat: lat, lon: lon, name: stationName });
           updateStationMarkers();
           alert("Station added at " + lat.toFixed(4) + ", " + lon.toFixed(4));
       });
+  });
+  document.getElementById("deleteStationBtn").addEventListener("click", function(){
+      if (!isEditing) return;
+      deleteStationMode = !deleteStationMode;
+      if (deleteStationMode) {
+          alert("Delete mode activated. Click on a station marker to delete it.");
+          document.getElementById("deleteStationBtn").style.backgroundColor = "red";
+      } else {
+          alert("Delete mode deactivated.");
+          document.getElementById("deleteStationBtn").style.backgroundColor = "";
+      }
   });
 
   /***********************
@@ -281,8 +291,11 @@
   way["highway"="primary"](${bbox});
 );
 out center;`;
-      fetch("https://overpass-api.de/api/interpreter", { method:"POST", body:"data=" + encodeURIComponent(query) })
-      .then(function(response) { return response.json(); })
+      fetch("https://overpass-api.de/api/interpreter", {
+          method:"POST",
+          body:"data=" + encodeURIComponent(query)
+      })
+      .then(function(response){ return response.json(); })
       .then(function(data) {
           mainRoads = data.elements.map(function(e) { 
               return { lat: e.center.lat, lon: e.center.lon, name: e.tags.name || "Main Road" }; 
@@ -346,7 +359,7 @@ out center;`;
       var index = Math.round(deg/45) % 8;
       return directions[index];
   }
-  // Returns a tiny blue arrow (Unicode) indicating direction from user's current location to a road.
+  // Returns a tiny blue arrow indicating direction from the user location to a given road.
   function getUserDirectionIndicator(roadLat, roadLon) {
       var indicator = "";
       if (currentLocationMarker) {
@@ -369,7 +382,7 @@ out center;`;
       }
       return indicator;
   }
-  // Compute RHQC code for a coordinate within a bounding box (5 levels)
+  // Compute the RHQC code for a coordinate within a bounding box (5 levels).
   function getRHQCCode(lat, lng, bounds, maxLevel) {
       var code = "";
       var currentBounds = JSON.parse(JSON.stringify(bounds));
@@ -428,7 +441,6 @@ out center;`;
               roads.push({ name: elem.tags.name, lat: elem.center.lat, lon: elem.center.lon });
           }
       });
-      // Remove duplicates and sort alphabetically.
       var uniqueRoads = {};
       roads.forEach(function(road) { uniqueRoads[road.name] = road; });
       roads = Object.values(uniqueRoads);
@@ -436,24 +448,21 @@ out center;`;
       var html = "";
       roads.forEach(function(road) {
           var code = getRHQCCode(road.lat, road.lon, [[gridBounds.getSouth(), gridBounds.getWest()], [gridBounds.getNorth(), gridBounds.getEast()]], 5);
-          // Nearest fire station (F)
           var nearestStation = null, minStationDist = Infinity;
           fireStations.forEach(function(station) {
               var d = getDistanceMiles(road.lat, road.lon, station.lat, station.lon);
               if (d < minStationDist) { minStationDist = d; nearestStation = station; }
           });
-          // Bearing from the station to the road.
           var stationBearing = nearestStation ? getBearing(nearestStation.lat, nearestStation.lon, road.lat, road.lon) : null;
           var stationCardinal = stationBearing !== null ? getCardinalDirection(stationBearing) : "";
           var stationInfo = nearestStation ? (minStationDist.toFixed(1) + " mi (Dir: " + stationCardinal + ")") : "N/A";
-          // Append direction from user if available.
           var userDir = getUserDirectionIndicator(road.lat, road.lon);
           html += "<div class='road-item' onclick='zoomToRoad(" + road.lat + ", " + road.lon + ")'>";
           html += "<span class='road-code'>" + code + "</span> " + road.name + userDir;
           html += "<div class='road-info'>Fire Station: " + stationInfo + "</div>";
           html += "</div>";
       });
-      if (html === "") html = "No roads found.";
+      if(html==="") html = "No roads found.";
       document.getElementById("roadsContainer").innerHTML = html;
       applyRoadFilter();
   }
@@ -500,13 +509,8 @@ out center;`;
       }).catch(function(error){ console.error("Error fetching main roads:", error); });
   }
 
-  // When a road is selected from the list, determine a route:
-  // - Find the nearest fire station (F) from static data.
-  // - Among main roads (M), find the one that minimizes F->M plus M->selected road.
-  // - Draw two segments (F→M and M→R) and show total distance.
   function zoomToRoad(lat, lon) {
       map.setView([lat, lon], 18);
-      // Find nearest station (F)
       var nearestStation = null, minStationDist = Infinity;
       fireStations.forEach(function(station) {
           var d = getDistanceMiles(lat, lon, station.lat, station.lon);
