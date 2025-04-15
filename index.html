@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>RHQC Mapping Prototype – Enhanced Official Data Integration</title>
+  <title>RHQC Mapping Prototype – Official Data Placeholders</title>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <!-- Leaflet CSS -->
@@ -11,7 +11,7 @@
   <style>
       body { margin: 0; padding: 0; }
       #map { position: absolute; top: 60px; bottom: 0; right: 0; left: 0; }
-      /* Address search bar */
+      /* Address search bar and controls */
       #searchBar {
           position: absolute;
           top: 5px;
@@ -54,6 +54,7 @@
       .road-item:hover {
           background: #eee;
       }
+      /* Style for the road’s RHQC code label */
       .road-code {
           font-weight: bold;
           color: #333;
@@ -62,11 +63,13 @@
           border-radius: 3px;
           margin-right: 5px;
       }
+      /* Additional info style for facility data (distance & direction) */
       .road-info {
           font-size: 11px;
           color: #555;
           margin-top: 2px;
       }
+      /* Button to toggle road list visibility */
       #roadListToggle {
           position: absolute;
           top: 60px;
@@ -86,6 +89,7 @@
   <div id="searchBar">
       <input type="text" id="addressInput" placeholder="Enter your address" size="30" />
       <button id="searchBtn">Search</button>
+      <!-- Current Location button: iOS requires a tap to prompt for location -->
       <button id="currentLocationBtn">Current Location</button>
   </div>
   <div id="map"></div>
@@ -103,18 +107,24 @@
   <!-- Leaflet Draw JS -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
   <script>
-  // Initialize map (centered on Hopkinsville, KY)
+  /***********************
+   * MAP INITIALIZATION
+   ***********************/
+  // Center the map on Hopkinsville, KY
   var map = L.map('map').setView([36.85, -87.55], 13);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
 
-  // Create a FeatureGroup for the drawn grid box
+  /***********************
+   * DRAWING THE GRID BOX
+   ***********************/
+  // Create a FeatureGroup for the drawn grid box and add to map.
   var drawnItems = new L.FeatureGroup();
   map.addLayer(drawnItems);
 
-  // Initialize Leaflet Draw (rectangle only)
+  // Initialize the Leaflet Draw control (only allow drawing of a rectangle).
   var drawControl = new L.Control.Draw({
       draw: {
           polyline: false,
@@ -122,48 +132,111 @@
           circle: false,
           marker: false,
           circlemarker: false,
-          rectangle: {
-              shapeOptions: { color: "#3388ff", weight: 2 }
-          }
+          rectangle: { shapeOptions: { color: "#3388ff", weight: 2 } }
       },
       edit: { featureGroup: drawnItems, edit: true, remove: false }
   });
   map.addControl(drawControl);
 
-  // Global variables for fire stations, hydrants, and emergency calls
+  // The drawn grid box will remain until the user draws a new one.
+  var gridBox = null;
+
+  // When a rectangle is drawn or edited, store it and fetch roads/emergency calls.
+  map.on(L.Draw.Event.CREATED, function(event) {
+      var layer = event.layer;
+      drawnItems.clearLayers();
+      drawnItems.addLayer(layer);
+      // Make grid box invisible—its bounds are used only for calculations.
+      layer.setStyle({ opacity: 0, fillOpacity: 0 });
+      gridBox = layer;
+      fetchAndDisplayRoads();
+      fetchEmergencyCalls();
+  });
+  map.on('draw:edited', function(e) {
+      gridBox = drawnItems.getLayers()[0];
+      fetchAndDisplayRoads();
+      fetchEmergencyCalls();
+  });
+
+  /***********************
+   * CURRENT LOCATION HANDLING
+   ***********************/
+  var currentLocationMarker = null;
+  var currentRouteLine = null;
+
+  // The "Current Location" button is used as a clear user gesture to request location access.
+  document.getElementById("currentLocationBtn").addEventListener("click", function() {
+      navigator.geolocation.getCurrentPosition(function(position) {
+          var lat = position.coords.latitude;
+          var lon = position.coords.longitude;
+          if (!currentLocationMarker) {
+              currentLocationMarker = L.circleMarker([lat, lon], {
+                  radius: 8, color: "#0000FF", fillColor: "#0000FF", fillOpacity: 1
+              }).addTo(map).bindPopup("Your current location");
+          } else {
+              currentLocationMarker.setLatLng([lat, lon]);
+          }
+          map.setView([lat, lon], 16);
+          currentLocationMarker.openPopup();
+      }, function(error) {
+          alert("Location access denied or unavailable.");
+      }, { enableHighAccuracy: true });
+  });
+
+  // Continuously update current location if permission is granted.
+  if ("geolocation" in navigator) {
+      navigator.geolocation.watchPosition(function(position) {
+          var lat = position.coords.latitude;
+          var lon = position.coords.longitude;
+          if (currentLocationMarker) {
+              currentLocationMarker.setLatLng([lat, lon]);
+          }
+      }, function(error) {
+          console.error("watchPosition error:", error);
+      }, { enableHighAccuracy: true });
+  }
+
+  /***********************
+   * DATA SOURCES (PLACEHOLDERS)
+   ***********************/
+  // For this prototype we use Overpass queries to obtain fire station and hydrant data.
+  // For more accurate and up-to-date data, consider using official Hopkinsville or Christian County data sources.
   var fireStations = [];
   var fireHydrants = [];
-  var emergencyCalls = [];
-  // Define Hopkinsville bbox (you may update this if you obtain an official source)
+  // Define a bounding box for Hopkinsville (used by Overpass); update as needed.
   var hopkinsvilleBBox = "36.75,-87.65,36.95,-87.45";
 
-  // Fetch fire station data (replace the Overpass query if you get an official endpoint)
   function fetchFireStations() {
       var query = `[out:json][timeout:25];
 node["amenity"="fire_station"](${hopkinsvilleBBox});
 out center;`;
       fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: "data=" + encodeURIComponent(query) })
-      .then(function(response){ return response.json(); })
-      .then(function(data){ 
-          fireStations = data.elements.map(function(e){ return { lat: e.lat, lon: e.lon }; });
-      }).catch(function(error){ console.error("Error fetching fire stations:", error); });
+      .then(function(response) { return response.json(); })
+      .then(function(data) {
+          fireStations = data.elements.map(function(e) { return { lat: e.lat, lon: e.lon }; });
+      }).catch(function(error) { console.error("Error fetching fire stations:", error); });
   }
 
-  // Fetch fire hydrant data (replace with official data if available)
   function fetchFireHydrants() {
       var query = `[out:json][timeout:25];
 node["emergency"="fire_hydrant"](${hopkinsvilleBBox});
 out center;`;
       fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: "data=" + encodeURIComponent(query) })
-      .then(function(response){ return response.json(); })
-      .then(function(data){ 
-          fireHydrants = data.elements.map(function(e){ return { lat: e.lat, lon: e.lon }; });
-      }).catch(function(error){ console.error("Error fetching fire hydrants:", error); });
+      .then(function(response) { return response.json(); })
+      .then(function(data) {
+          fireHydrants = data.elements.map(function(e) { return { lat: e.lat, lon: e.lon }; });
+      }).catch(function(error) { console.error("Error fetching fire hydrants:", error); });
   }
 
-  // Dummy fetch for recent emergency calls (replace this with an official API call)
+  fetchFireStations();
+  fetchFireHydrants();
+
+  // Dummy emergency call data.
+  // For real deployments, you might integrate with an official source (e.g., from Christian County Emergency Dispatch,
+  // a "First Arriving" API, or radio traffic feeds). This prototype uses hard-coded dummy data.
+  var emergencyCalls = [];
   function fetchEmergencyCalls() {
-      // Example dummy data – replace with data from an official emergency dispatch feed
+      // Replace the following dummy data with data from an official EMS/Fire dispatch source.
       emergencyCalls = [
           { lat: 36.87, lon: -87.55, time: "10:15 AM" },
           { lat: 36.82, lon: -87.60, time: "11:30 AM" },
@@ -172,146 +245,89 @@ out center;`;
       displayEmergencyCalls();
   }
 
-  // Show emergency call markers (only within the drawn grid box)
   var emergencyCallLayer = new L.LayerGroup().addTo(map);
   function displayEmergencyCalls() {
       emergencyCallLayer.clearLayers();
       if (!gridBox) return;
       var bounds = gridBox.getBounds();
-      emergencyCalls.forEach(function(call){
+      emergencyCalls.forEach(function(call) {
           var latlng = L.latLng(call.lat, call.lon);
-          if(bounds.contains(latlng)) {
-              L.marker(latlng, {
+          if (bounds.contains(latlng)) {
+              L.marker(latlng, { 
                   icon: L.icon({
-                      iconUrl: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png', // sample icon
-                      iconSize: [24,24]
+                      iconUrl: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png', // sample icon (replace if needed)
+                      iconSize: [24, 24]
                   })
-              }).addTo(emergencyCallLayer).bindPopup("911 Call at " + call.time);
+              }).addTo(emergencyCallLayer)
+              .bindPopup("911 Call at " + call.time);
           }
       });
   }
 
-  // Fetch facility data immediately on load (replace Overpass with official sources if available)
-  fetchFireStations();
-  fetchFireHydrants();
-  fetchEmergencyCalls();
-
-  // Automatically request current location on page load
-  var currentLocationMarker = null;
-  var currentRouteLine = null;
-  window.addEventListener("load", function(){
-      navigator.geolocation.getCurrentPosition(function(position){
-          var lat = position.coords.latitude;
-          var lon = position.coords.longitude;
-          if (!currentLocationMarker) {
-              currentLocationMarker = L.circleMarker([lat, lon], { radius: 8, color: "#0000FF", fillColor: "#0000FF", fillOpacity: 1 })
-                  .addTo(map).bindPopup("Your current location");
-          } else {
-              currentLocationMarker.setLatLng([lat, lon]);
-          }
-          map.setView([lat, lon], 16);
-          currentLocationMarker.openPopup();
-      }, function(error){
-          console.error("Auto location error:", error);
-      }, { enableHighAccuracy: true });
-  });
-
-  // Also update current location continuously, if permitted
-  if ("geolocation" in navigator) {
-      navigator.geolocation.watchPosition(function(position){
-          var lat = position.coords.latitude;
-          var lon = position.coords.longitude;
-          if(currentLocationMarker) { currentLocationMarker.setLatLng([lat, lon]); }
-      }, function(error){ console.error("WatchPosition error:", error); }, { enableHighAccuracy: true });
-  }
-
-  // Helper functions: conversions, distance and bearing calculations
+  /***********************
+   * HELPER FUNCTIONS
+   ***********************/
   function toRad(value) { return value * Math.PI / 180; }
   function toDeg(rad) { return rad * 180 / Math.PI; }
   function getDistanceMiles(lat1, lon1, lat2, lon2) {
-      var R = 3958.8; // Earth's radius in miles
+      var R = 3958.8; // Radius of the Earth in miles
       var dLat = toRad(lat2 - lat1);
       var dLon = toRad(lon2 - lon1);
-      var a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+      var a = Math.sin(dLat / 2) ** 2 +
+              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+              Math.sin(dLon / 2) ** 2;
       var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       return R * c;
   }
   function getBearing(lat1, lon1, lat2, lon2) {
       var dLon = toRad(lon2 - lon1);
-      var y = Math.sin(dLon)*Math.cos(toRad(lat2));
-      var x = Math.cos(toRad(lat1))*Math.sin(toRad(lat2)) - Math.sin(toRad(lat1))*Math.cos(toRad(lat2))*Math.cos(dLon);
+      var y = Math.sin(dLon) * Math.cos(toRad(lat2));
+      var x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+              Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLon);
       var brng = Math.atan2(y, x);
       return (toDeg(brng) + 360) % 360;
   }
   function getCardinalDirection(deg) {
-      var directions = ['N','NE','E','SE','S','SW','W','NW'];
-      var index = Math.round(deg/45) % 8;
+      var directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+      var index = Math.round(deg / 45) % 8;
       return directions[index];
   }
 
-  // Compute RHQC code for a given coordinate within a bounding box (5 levels)
-  // Bounding box format: [[south, west], [north, east]]
+  // Compute RHQC code for a coordinate within a bounding box (5 levels)
+  // The bounding box must be of the form [[south, west], [north, east]]
   function getRHQCCode(lat, lng, bounds, maxLevel) {
       var code = "";
       var currentBounds = JSON.parse(JSON.stringify(bounds));
-      for(var level=1; level<=maxLevel; level++){
-          var south = currentBounds[0][0], west = currentBounds[0][1],
-              north = currentBounds[1][0], east = currentBounds[1][1];
-          var midLat = (south+north)/2, midLng = (west+east)/2;
-          if(lat>=midLat && lng<=midLng){
-              code+="1";
+      for (var level = 1; level <= maxLevel; level++) {
+          var south = currentBounds[0][0],
+              west = currentBounds[0][1],
+              north = currentBounds[1][0],
+              east = currentBounds[1][1];
+          var midLat = (south + north) / 2;
+          var midLng = (west + east) / 2;
+          if (lat >= midLat && lng <= midLng) {
+              code += "1";
               currentBounds = [[midLat, west], [north, midLng]];
-          } else if(lat>=midLat && lng>midLng){
-              code+="2";
+          } else if (lat >= midLat && lng > midLng) {
+              code += "2";
               currentBounds = [[midLat, midLng], [north, east]];
-          } else if(lat<midLat && lng<=midLng){
-              code+="3";
+          } else if (lat < midLat && lng <= midLng) {
+              code += "3";
               currentBounds = [[south, west], [midLat, midLng]];
           } else {
-              code+="4";
+              code += "4";
               currentBounds = [[south, midLng], [midLat, east]];
           }
       }
       return code;
   }
 
-  // Variable to store the drawn (invisible) grid box – remains until a new one is drawn
-  var gridBox = null;
-  map.on(L.Draw.Event.CREATED, function(event){
-      var layer = event.layer;
-      drawnItems.clearLayers();
-      drawnItems.addLayer(layer);
-      layer.setStyle({ opacity: 0, fillOpacity: 0 });
-      gridBox = layer;
-      fetchAndDisplayRoads();
-      fetchEmergencyCalls();
-  });
-  map.on('draw:edited', function(e){
-      gridBox = drawnItems.getLayers()[0];
-      fetchAndDisplayRoads();
-      fetchEmergencyCalls();
-  });
-
-  // Address search via Nominatim API
-  document.getElementById("searchBtn").addEventListener("click", function(){
-      var address = document.getElementById("addressInput").value;
-      if(!address) return;
-      var url = "https://nominatim.openstreetmap.org/search?format=json&q=" + encodeURIComponent(address);
-      fetch(url).then(function(response){ return response.json(); })
-          .then(function(data){
-              if(data.length > 0){
-                  var lat = parseFloat(data[0].lat), lon = parseFloat(data[0].lon);
-                  map.setView([lat,lon],16);
-                  L.marker([lat,lon]).addTo(map).bindPopup("Search Result: " + address).openPopup();
-              } else {
-                  alert("Address not found!");
-              }
-          });
-  });
-
-  // Fetch roads within the drawn grid box via Overpass API
-  function fetchAndDisplayRoads(){
-      if(!gridBox){
+  /***********************
+   * FETCH & DISPLAY ROADS
+   ***********************/
+  // Fetch roads within the drawn grid box (via Overpass API). Replace with official datasets if available.
+  function fetchAndDisplayRoads() {
+      if (!gridBox) {
           document.getElementById("roadsContainer").innerHTML = "No grid box defined.";
           return;
       }
@@ -327,48 +343,48 @@ out center;`;
           method: "POST",
           body: "data=" + encodeURIComponent(query)
       })
-      .then(function(response){ return response.json(); })
-      .then(function(data){ processRoadData(data.elements, bounds); })
-      .catch(function(error){
+      .then(function(response) { return response.json(); })
+      .then(function(data) { processRoadData(data.elements, bounds); })
+      .catch(function(error) {
           console.error("Error fetching roads:", error);
           document.getElementById("roadsContainer").innerHTML = "Error loading roads.";
       });
   }
 
-  // Process road data: compute RHQC code; for each road, determine the nearest fire station and hydrant.
-  function processRoadData(elements, gridBounds){
+  // Process road data: compute RHQC code; determine nearest fire station and hydrant.
+  function processRoadData(elements, gridBounds) {
       var roads = [];
-      elements.forEach(function(elem){
-          if(elem.type==="way" && elem.tags && elem.tags.name && elem.center){
+      elements.forEach(function(elem) {
+          if (elem.type === "way" && elem.tags && elem.tags.name && elem.center) {
               roads.push({ name: elem.tags.name, lat: elem.center.lat, lon: elem.center.lon });
           }
       });
-      // Remove duplicates and sort alphabetically.
+      // Remove duplicate roads and sort alphabetically.
       var uniqueRoads = {};
-      roads.forEach(function(road){ uniqueRoads[road.name]=road; });
+      roads.forEach(function(road) { uniqueRoads[road.name] = road; });
       roads = Object.values(uniqueRoads);
-      roads.sort(function(a,b){ return a.name.localeCompare(b.name); });
+      roads.sort(function(a, b) { return a.name.localeCompare(b.name); });
 
       var html = "";
-      roads.forEach(function(road){
+      roads.forEach(function(road) {
           var code = getRHQCCode(road.lat, road.lon, [[gridBounds.getSouth(), gridBounds.getWest()], [gridBounds.getNorth(), gridBounds.getEast()]], 5);
           
-          // Nearest fire station calculation – using bearing FROM the station TO the road.
+          // Find nearest fire station based on Overpass data (or replace with official data)
           var nearestStation = null, minStationDist = Infinity;
-          fireStations.forEach(function(station){
+          fireStations.forEach(function(station) {
               var d = getDistanceMiles(road.lat, road.lon, station.lat, station.lon);
-              if(d < minStationDist){ minStationDist = d; nearestStation = station; }
+              if (d < minStationDist) { minStationDist = d; nearestStation = station; }
           });
-          var stationInfo = nearestStation ? 
+          var stationInfo = nearestStation ?
               (minStationDist.toFixed(1) + " mi " + getCardinalDirection(getBearing(nearestStation.lat, nearestStation.lon, road.lat, road.lon))) : "N/A";
           
-          // Nearest fire hydrant calculation.
+          // Find nearest fire hydrant similarly.
           var nearestHydrant = null, minHydrantDist = Infinity;
-          fireHydrants.forEach(function(hydrant){
+          fireHydrants.forEach(function(hydrant) {
               var d = getDistanceMiles(road.lat, road.lon, hydrant.lat, hydrant.lon);
-              if(d < minHydrantDist){ minHydrantDist = d; nearestHydrant = hydrant; }
+              if (d < minHydrantDist) { minHydrantDist = d; nearestHydrant = hydrant; }
           });
-          var hydrantInfo = nearestHydrant ? 
+          var hydrantInfo = nearestHydrant ?
               (minHydrantDist.toFixed(1) + " mi " + getCardinalDirection(getBearing(nearestHydrant.lat, nearestHydrant.lon, road.lat, road.lon))) : "N/A";
           
           html += "<div class='road-item' onclick='zoomToRoad(" + road.lat + ", " + road.lon + ")'>";
@@ -376,32 +392,38 @@ out center;`;
           html += "<div class='road-info'>Fire Station: " + stationInfo + " | Hydrant: " + hydrantInfo + "</div>";
           html += "</div>";
       });
-      if(html==="") html = "No roads found.";
+      if (html === "") html = "No roads found.";
       document.getElementById("roadsContainer").innerHTML = html;
   }
 
-  // Zoom to road, draw route from current location with a tooltip showing the distance, and auto-hide the road list.
-  function zoomToRoad(lat, lon){
+  /***********************
+   * ROUTE DRAWING & DISTANCE DISPLAY
+   ***********************/
+  // When a road is clicked, pan to it, draw a route from current location, and show the distance along that route.
+  function zoomToRoad(lat, lon) {
       map.setView([lat, lon], 18);
-      if(currentLocationMarker){
+      if (currentLocationMarker) {
           var currentLatLng = currentLocationMarker.getLatLng();
-          if(currentRouteLine){ map.removeLayer(currentRouteLine); }
+          if (currentRouteLine) { map.removeLayer(currentRouteLine); }
           currentRouteLine = L.polyline([currentLatLng, [lat, lon]], { color: "orange", weight: 3 }).addTo(map);
           var distance = getDistanceMiles(currentLatLng.lat, currentLatLng.lng, lat, lon).toFixed(1);
           currentRouteLine.bindTooltip(distance + " mi", { permanent: true, direction: 'center' }).openTooltip();
       }
       L.circleMarker([lat, lon], { radius: 6, color: "#FF0000" }).addTo(map)
           .bindPopup("Road Location").openPopup();
+      // Auto-hide the road list
       document.getElementById("roadList").style.display = "none";
       document.getElementById("roadListToggle").style.display = "block";
   }
 
-  // Road list toggle buttons
-  document.getElementById("toggleRoadListBtn").addEventListener("click", function(){
+  /***********************
+   * ROAD LIST PANEL TOGGLING
+   ***********************/
+  document.getElementById("toggleRoadListBtn").addEventListener("click", function() {
       document.getElementById("roadList").style.display = "none";
       document.getElementById("roadListToggle").style.display = "block";
   });
-  document.getElementById("roadListToggle").addEventListener("click", function(){
+  document.getElementById("roadListToggle").addEventListener("click", function() {
       document.getElementById("roadList").style.display = "block";
       document.getElementById("roadListToggle").style.display = "none";
   });
