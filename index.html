@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>RHQC Mapping Prototype – V3 Grid Overlay</title>
+  <title>RHQC Mapping Prototype – Fire Services Info</title>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <!-- Leaflet CSS -->
@@ -63,6 +63,12 @@
           border-radius: 3px;
           margin-right: 5px;
       }
+      /* Additional info style (distance & direction) */
+      .road-info {
+          font-size: 11px;
+          color: #555;
+          margin-top: 2px;
+      }
       /* Button to show road list when minimized */
       #roadListToggle {
           position: absolute;
@@ -76,15 +82,6 @@
           cursor: pointer;
           font-family: Arial, sans-serif;
           font-size: 14px;
-      }
-      /* Style for grid labels drawn on the V3 grid overlay */
-      .grid-label {
-          font-size: 12px;
-          font-weight: bold;
-          color: #000;
-          background: rgba(255,255,255,0.7);
-          padding: 2px 4px;
-          border-radius: 3px;
       }
   </style>
 </head>
@@ -109,23 +106,20 @@
   <!-- Leaflet Draw JS -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
   <script>
-  // Initialize the map centered on a default location (Hopkinsville, KY)
+  // Initialize the map centered on Hopkinsville, KY
   var map = L.map('map').setView([36.85, -87.55], 13);
 
-  // Add the OpenStreetMap tile layer
+  // Add OpenStreetMap tile layer
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-     maxZoom: 19,
-     attribution: '&copy; OpenStreetMap contributors'
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
 
-  // Create a FeatureGroup to store editable layers (our grid box)
+  // Create a FeatureGroup for editable layers (our grid box)
   var drawnItems = new L.FeatureGroup();
   map.addLayer(drawnItems);
 
-  // Layer group to store the V3 grid overlay (the recursive quadrant display)
-  var v3GridLayer = new L.LayerGroup().addTo(map);
-
-  // Initialize the Leaflet Draw control
+  // Initialize Leaflet Draw control (only allowing rectangle)
   var drawControl = new L.Control.Draw({
       draw: {
           polyline: false,
@@ -148,11 +142,59 @@
   });
   map.addControl(drawControl);
 
-  // Variables for current location marker and route polyline
+  // Global arrays to store fire station and hydrant locations (fetched once)
+  var fireStations = [];
+  var fireHydrants = [];
+  // Define a bounding box for Hopkinsville (south,west,north,east) as a string for Overpass queries
+  var hopkinsvilleBBox = "36.75,-87.65,36.95,-87.45";
+
+  // Fetch fire stations via Overpass API
+  function fetchFireStations() {
+      var query = `[out:json][timeout:25];
+node["amenity"="fire_station"](${hopkinsvilleBBox});
+out center;`;
+      fetch("https://overpass-api.de/api/interpreter", {
+          method: "POST",
+          body: "data=" + encodeURIComponent(query)
+      })
+      .then(function(response) { return response.json(); })
+      .then(function(data) {
+          fireStations = data.elements.map(function(e) {
+              return { lat: e.lat, lon: e.lon };
+          });
+      })
+      .catch(function(error) {
+          console.error("Error fetching fire stations:", error);
+      });
+  }
+
+  // Fetch fire hydrants via Overpass API
+  function fetchFireHydrants() {
+      var query = `[out:json][timeout:25];
+node["emergency"="fire_hydrant"](${hopkinsvilleBBox});
+out center;`;
+      fetch("https://overpass-api.de/api/interpreter", {
+          method: "POST",
+          body: "data=" + encodeURIComponent(query)
+      })
+      .then(function(response) { return response.json(); })
+      .then(function(data) {
+          fireHydrants = data.elements.map(function(e) {
+              return { lat: e.lat, lon: e.lon };
+          });
+      })
+      .catch(function(error) {
+          console.error("Error fetching fire hydrants:", error);
+      });
+  }
+
+  // Immediately fetch fire stations and hydrants on load
+  fetchFireStations();
+  fetchFireHydrants();
+
+  // Geolocation: track user's current location (blue dot)
   var currentLocationMarker = null;
   var currentRouteLine = null;
-
-  // Request user's current location using Geolocation API (updates continuously)
   if ("geolocation" in navigator) {
       navigator.geolocation.watchPosition(function(position) {
           var lat = position.coords.latitude;
@@ -171,7 +213,7 @@
       alert("Geolocation is not available in your browser.");
   }
 
-  // "Current Location" button: pan the map to user's location when clicked
+  // "Current Location" button: pan to user's current location
   document.getElementById("currentLocationBtn").addEventListener("click", function() {
       if (currentLocationMarker) {
           map.setView(currentLocationMarker.getLatLng(), 16);
@@ -181,83 +223,89 @@
       }
   });
 
-  // --- V3 RHQC Grid Overlay Functions ---
-
-  // Return V3 color based on level using a predetermined palette (V3 design)
-  function getV3ColorForLevel(level) {
-      // Colors chosen to match a typical V3 color palette; adjust as needed
-      var v3Colors = ["#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00"];
-      return v3Colors[level - 1] || "#000000";
+  // Function to convert degrees to radians
+  function toRad(value) {
+      return value * Math.PI / 180;
+  }
+  // Function to convert radians to degrees
+  function toDeg(rad) {
+      return rad * 180 / Math.PI;
+  }
+  // Haversine distance (in miles) between two lat/lon points
+  function getDistanceMiles(lat1, lon1, lat2, lon2) {
+      var R = 3958.8; // Radius of Earth in miles
+      var dLat = toRad(lat2 - lat1);
+      var dLon = toRad(lon2 - lon1);
+      var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+  }
+  // Calculate bearing (in degrees) from point A to point B
+  function getBearing(lat1, lon1, lat2, lon2) {
+      var dLon = toRad(lon2 - lon1);
+      var y = Math.sin(dLon) * Math.cos(toRad(lat2));
+      var x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+              Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLon);
+      var brng = Math.atan2(y, x);
+      brng = toDeg(brng);
+      return (brng + 360) % 360;
+  }
+  // Convert bearing in degrees to cardinal direction (N, NE, E, etc.)
+  function getCardinalDirection(deg) {
+      var directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+      var index = Math.round(deg / 45) % 8;
+      return directions[index];
   }
 
-  // Recursively deploy the V3 grid overlay given bounds, base code, current level, and maxLevel.
-  function deployV3Grid(bounds, code, level, maxLevel) {
-      // Draw the current rectangle with border color from V3 system and slight fill
-      var rect = L.rectangle(bounds, {
-          color: getV3ColorForLevel(level),
-          weight: 1,
-          fillOpacity: 0.15
-      });
-      rect.addTo(v3GridLayer);
-
-      // If not at max level, subdivide further
-      if (level < maxLevel) {
-          var south = bounds[0][0],
-              west = bounds[0][1],
-              north = bounds[1][0],
-              east = bounds[1][1];
+  // Function to compute the RHQC code for a given coordinate within a bounding box (5 levels)
+  // The bounding box is in the format [[south, west], [north, east]]
+  function getRHQCCode(lat, lng, bounds, maxLevel) {
+      var code = "";
+      var currentBounds = JSON.parse(JSON.stringify(bounds)); // clone bounds
+      for (var level = 1; level <= maxLevel; level++) {
+          var south = currentBounds[0][0],
+              west = currentBounds[0][1],
+              north = currentBounds[1][0],
+              east = currentBounds[1][1];
           var midLat = (south + north) / 2;
           var midLng = (west + east) / 2;
-
-          // Subdivide into four quadrants and recurse:
-          deployV3Grid([[midLat, west], [north, midLng]], code + "1", level + 1, maxLevel); // NW
-          deployV3Grid([[midLat, midLng], [north, east]], code + "2", level + 1, maxLevel); // NE
-          deployV3Grid([[south, west], [midLat, midLng]], code + "3", level + 1, maxLevel); // SW
-          deployV3Grid([[south, midLng], [midLat, east]], code + "4", level + 1, maxLevel); // SE
-      } else {
-          // At max level, add a label with the grid code in the center of this quadrant
-          var centerLat = (bounds[0][0] + bounds[1][0]) / 2;
-          var centerLng = (bounds[0][1] + bounds[1][1]) / 2;
-          L.marker([centerLat, centerLng], {
-              icon: L.divIcon({
-                  className: 'grid-label',
-                  html: code,
-                  iconSize: [30, 15]
-              })
-          }).addTo(v3GridLayer);
+          if (lat >= midLat && lng <= midLng) {
+              code += "1";
+              currentBounds = [[midLat, west], [north, midLng]];
+          } else if (lat >= midLat && lng > midLng) {
+              code += "2";
+              currentBounds = [[midLat, midLng], [north, east]];
+          } else if (lat < midLat && lng <= midLng) {
+              code += "3";
+              currentBounds = [[south, west], [midLat, midLng]];
+          } else {
+              code += "4";
+              currentBounds = [[south, midLng], [midLat, east]];
+          }
       }
+      return code;
   }
 
-  // --- End of V3 Grid Functions ---
-
-  // Variable to store the drawn rectangle (grid box)
+  // Variable to store the drawn grid box (which will remain invisible)
   var gridBox = null;
 
-  // When a new rectangle is created via Leaflet.draw, add it to drawnItems, hide its default styling,
-  // and deploy the V3 RHQC grid overlay.
+  // When a new rectangle is created via Leaflet.draw, clear previous layers, add the new one,
+  // set its style to invisible, and fetch roads within its bounds.
   map.on(L.Draw.Event.CREATED, function(event) {
       var layer = event.layer;
       drawnItems.clearLayers(); // only one grid box at a time
       drawnItems.addLayer(layer);
-      // Hide the default drawn rectangle so the V3 grid takes visual priority
+      // Make the rectangle invisible
       layer.setStyle({ opacity: 0, fillOpacity: 0 });
       gridBox = layer;
-      // Clear any previous grid overlay and deploy the new V3 grid overlay based on the drawn rectangle bounds
-      v3GridLayer.clearLayers();
-      var bounds = gridBox.getBounds();
-      // Convert Leaflet bounds to an array format [[south, west], [north, east]]
-      var gridBounds = [[bounds.getSouth(), bounds.getWest()], [bounds.getNorth(), bounds.getEast()]];
-      deployV3Grid(gridBounds, "", 1, 5);
       fetchAndDisplayRoads();
   });
 
-  // When the rectangle is edited, update the grid overlay
+  // When the rectangle is edited, update the grid box and fetch roads again.
   map.on('draw:edited', function(e) {
       gridBox = drawnItems.getLayers()[0];
-      v3GridLayer.clearLayers();
-      var bounds = gridBox.getBounds();
-      var gridBounds = [[bounds.getSouth(), bounds.getWest()], [bounds.getNorth(), bounds.getEast()]];
-      deployV3Grid(gridBounds, "", 1, 5);
       fetchAndDisplayRoads();
   });
 
@@ -280,7 +328,7 @@
           });
   });
 
-  // Function to fetch roads within the grid box using Overpass API
+  // Function to fetch roads within the drawn grid box (using Overpass API)
   function fetchAndDisplayRoads() {
       if (!gridBox) {
           document.getElementById("roadsContainer").innerHTML = "No grid box defined.";
@@ -297,7 +345,6 @@
   way["highway"](${bbox});
 );
 out center;`;
-
       fetch("https://overpass-api.de/api/interpreter", {
           method: "POST",
           body: "data=" + encodeURIComponent(query)
@@ -312,7 +359,8 @@ out center;`;
       });
   }
 
-  // Process road data from Overpass API response
+  // Process road data from Overpass API response: filter roads with a name and center,
+  // then for each road compute its RHQC code and additionally find the nearest fire station and hydrant.
   function processRoadData(elements, gridBounds) {
       var roads = [];
       elements.forEach(function(elem) {
@@ -324,7 +372,7 @@ out center;`;
               });
           }
       });
-      // Remove duplicates by road name and sort alphabetically
+      // Remove duplicate roads by name and sort alphabetically
       var uniqueRoads = {};
       roads.forEach(function(road) {
           uniqueRoads[road.name] = road;
@@ -335,47 +383,48 @@ out center;`;
       });
       var html = "";
       roads.forEach(function(road) {
-          // Compute the RHQC code based on the road's location using the grid box bounds
           var code = getRHQCCode(road.lat, road.lon, [[gridBounds.getSouth(), gridBounds.getWest()], [gridBounds.getNorth(), gridBounds.getEast()]], 5);
+          
+          // Find nearest fire station to the road
+          var nearestStation = null, minStationDist = Infinity;
+          fireStations.forEach(function(station) {
+              var d = getDistanceMiles(road.lat, road.lon, station.lat, station.lon);
+              if (d < minStationDist) { minStationDist = d; nearestStation = station; }
+          });
+          var stationInfo = "";
+          if (nearestStation) {
+              var bearingStation = getBearing(road.lat, road.lon, nearestStation.lat, nearestStation.lon);
+              var directionStation = getCardinalDirection(bearingStation);
+              stationInfo = minStationDist.toFixed(1) + " mi " + directionStation;
+          } else {
+              stationInfo = "N/A";
+          }
+          
+          // Find nearest fire hydrant to the road
+          var nearestHydrant = null, minHydrantDist = Infinity;
+          fireHydrants.forEach(function(hydrant) {
+              var d = getDistanceMiles(road.lat, road.lon, hydrant.lat, hydrant.lon);
+              if (d < minHydrantDist) { minHydrantDist = d; nearestHydrant = hydrant; }
+          });
+          var hydrantInfo = "";
+          if (nearestHydrant) {
+              var bearingHydrant = getBearing(road.lat, road.lon, nearestHydrant.lat, nearestHydrant.lon);
+              var directionHydrant = getCardinalDirection(bearingHydrant);
+              hydrantInfo = minHydrantDist.toFixed(1) + " mi " + directionHydrant;
+          } else {
+              hydrantInfo = "N/A";
+          }
+          
           html += "<div class='road-item' onclick='zoomToRoad(" + road.lat + ", " + road.lon + ")'>";
           html += "<span class='road-code'>" + code + "</span> " + road.name;
+          html += "<div class='road-info'>Fire Station: " + stationInfo + " | Hydrant: " + hydrantInfo + "</div>";
           html += "</div>";
       });
       if (html === "") html = "No roads found.";
       document.getElementById("roadsContainer").innerHTML = html;
   }
 
-  // Function to compute the RHQC code for a coordinate given a bounding box and max level.
-  function getRHQCCode(lat, lng, bounds, maxLevel) {
-      var code = "";
-      var currentBounds = JSON.parse(JSON.stringify(bounds)); // clone bounds
-
-      for (var level = 1; level <= maxLevel; level++) {
-          var south = currentBounds[0][0],
-              west = currentBounds[0][1],
-              north = currentBounds[1][0],
-              east = currentBounds[1][1];
-          var midLat = (south + north) / 2;
-          var midLng = (west + east) / 2;
-
-          if (lat >= midLat && lng <= midLng) {
-              code += "1";
-              currentBounds = [[midLat, west], [north, midLng]];
-          } else if (lat >= midLat && lng > midLng) {
-              code += "2";
-              currentBounds = [[midLat, midLng], [north, east]];
-          } else if (lat < midLat && lng <= midLng) {
-              code += "3";
-              currentBounds = [[south, west], [midLat, midLng]];
-          } else {
-              code += "4";
-              currentBounds = [[south, midLng], [midLat, east]];
-          }
-      }
-      return code;
-  }
-
-  // Function to zoom to a road when its item is clicked and draw a route from current location;
+  // Function to zoom to a road when its item is clicked and draw a route from the user's current location;
   // Also automatically minimizes (hides) the road list panel.
   function zoomToRoad(lat, lon) {
       map.setView([lat, lon], 18);
