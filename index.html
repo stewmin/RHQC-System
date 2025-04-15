@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>RHQC Mapping Prototype – Fire Dispatch Route (Static Stations)</title>
+  <title>RHQC Mapping Prototype – Dispatch Route with Filter and Stations</title>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <!-- Leaflet CSS -->
@@ -11,7 +11,7 @@
   <style>
       body { margin: 0; padding: 0; }
       #map { position: absolute; top: 60px; bottom: 0; right: 0; left: 0; }
-      /* Address bar and control panel */
+      /* Address search bar and controls */
       #searchBar {
           position: absolute;
           top: 5px;
@@ -46,6 +46,14 @@
           padding: 2px 4px;
           cursor: pointer;
       }
+      /* Filter input above the road list */
+      #roadFilter {
+          width: 100%;
+          margin: 5px 0;
+          padding: 4px;
+          box-sizing: border-box;
+          font-size: 13px;
+      }
       .road-item {
           padding: 5px;
           border-bottom: 1px solid #ccc;
@@ -65,7 +73,7 @@
           color: #555;
           margin-top: 2px;
       }
-      /* Tiny blue arrow indicating direction from user location */
+      /* Tiny blue arrow for user direction indicator */
       .user-direction {
           color: blue;
           font-size: 12px;
@@ -91,7 +99,7 @@
   <div id="searchBar">
       <input type="text" id="addressInput" placeholder="Enter your address" size="30" />
       <button id="searchBtn">Search</button>
-      <!-- Tapping this button triggers location permission (required on iOS) -->
+      <!-- The "Current Location" button triggers the location prompt on iOS -->
       <button id="currentLocationBtn">Current Location</button>
   </div>
   <div id="map"></div>
@@ -100,12 +108,15 @@
           Road List
           <button id="toggleRoadListBtn">Close</button>
       </h3>
+      <!-- Road filter input -->
+      <input type="text" id="roadFilter" placeholder="Filter roads..." />
       <div id="roadsContainer">No roads loaded.</div>
   </div>
   <div id="roadListToggle">Show Road List</div>
 
-  <!-- Leaflet and Draw libraries -->
+  <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+  <!-- Leaflet Draw JS -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
   <script>
   /***********************
@@ -135,7 +146,7 @@
       var layer = event.layer;
       drawnItems.clearLayers();
       drawnItems.addLayer(layer);
-      // Make the drawn grid box invisible (its bounds are used for calculations)
+      // Make grid box invisible (we only use its bounds for calculations)
       layer.setStyle({ opacity: 0, fillOpacity: 0 });
       gridBox = layer;
       fetchAndDisplayRoads();
@@ -154,14 +165,12 @@
    ***********************/
   var currentLocationMarker = null;
   var currentRouteLine = null;
-  // "Current Location" button triggers a getCurrentPosition call (iOS requires a tap)
   document.getElementById("currentLocationBtn").addEventListener("click", function(){
       navigator.geolocation.getCurrentPosition(function(position){
           var lat = position.coords.latitude, lon = position.coords.longitude;
           if (!currentLocationMarker) {
-              currentLocationMarker = L.circleMarker([lat, lon], { 
-                  radius: 8, color: "#0000FF", fillColor: "#0000FF", fillOpacity: 1 
-              }).addTo(map).bindPopup("Your current location");
+              currentLocationMarker = L.circleMarker([lat, lon], { radius: 8, color: "#0000FF", fillColor: "#0000FF", fillOpacity: 1 })
+                  .addTo(map).bindPopup("Your current location");
           } else {
               currentLocationMarker.setLatLng([lat, lon]);
           }
@@ -179,15 +188,20 @@
   }
 
   /***********************
-   * FIRE STATION DATA (Static)
+   * STATIC FIRE STATION DATA AND MARKERS
    ***********************/
-  // Replace these with officially verified coordinates if available.
+  // Use the exact addresses you provided (replace with verified coordinates if needed)
   var fireStations = [
       { lat: 36.8600, lon: -87.5340, name: "Station 1 – 112 Phillip Meacham Way" },
       { lat: 36.8650, lon: -87.5300, name: "Station 2 – 1188 Skyline Dr" },
       { lat: 36.8750, lon: -87.5600, name: "Station 3 – 3203 Canton Pike" },
-      { lat: 36.8900, lon: -87.5900, name: "Station 4 – 9503 Hopkinsville Byp" }
+      { lat: 36.8920, lon: -87.5900, name: "Station 4 – 9503 Hopkinsville Byp" }
   ];
+  // Add markers for the stations on the map.
+  fireStations.forEach(function(station) {
+      L.marker([station.lat, station.lon]).addTo(map)
+          .bindPopup(station.name);
+  });
 
   /***********************
    * MAIN ROAD DATA (Overpass Query Placeholder)
@@ -213,11 +227,11 @@ out center;`;
   }
 
   /***********************
-   * EMERGENCY CALL DATA (Dummy Data Placeholder)
+   * EMERGENCY CALL DATA (Dummy Placeholder)
    ***********************/
   var emergencyCalls = [];
   function fetchEmergencyCalls() {
-      // Replace with official emergency dispatch feed if available.
+      // Dummy data; replace with official emergency dispatch feed if available.
       emergencyCalls = [
           { lat: 36.87, lon: -87.55, time: "10:15 AM" },
           { lat: 36.82, lon: -87.60, time: "11:30 AM" },
@@ -248,36 +262,36 @@ out center;`;
   /***********************
    * HELPER FUNCTIONS
    ***********************/
-  function toRad(value) { return value * Math.PI / 180; }
-  function toDeg(rad) { return rad * 180 / Math.PI; }
-  function getDistanceMiles(lat1, lon1, lat2, lon2) {
+  function toRad(value){ return value * Math.PI / 180; }
+  function toDeg(rad){ return rad * 180 / Math.PI; }
+  function getDistanceMiles(lat1, lon1, lat2, lon2){
       var R = 3958.8; // Earth's radius in miles
       var dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
-      var a = Math.sin(dLat/2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2) ** 2;
-      var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      var a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+      var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
       return R * c;
   }
-  function getBearing(lat1, lon1, lat2, lon2) {
+  function getBearing(lat1, lon1, lat2, lon2){
       var dLon = toRad(lon2 - lon1);
       var y = Math.sin(dLon) * Math.cos(toRad(lat2));
       var x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) - Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLon);
       var brng = Math.atan2(y, x);
       return (toDeg(brng) + 360) % 360;
   }
-  function getCardinalDirection(deg) {
+  function getCardinalDirection(deg){
       var directions = ['N','NE','E','SE','S','SW','W','NW'];
       var index = Math.round(deg/45) % 8;
       return directions[index];
   }
-  // Displays a tiny blue arrow indicating the direction from the user's location to a road.
-  function getUserDirectionIndicator(roadLat, roadLon) {
+  // Returns a tiny blue arrow (Unicode) indicating the direction (from user location to the road)
+  function getUserDirectionIndicator(roadLat, roadLon){
       var indicator = "";
-      if (currentLocationMarker) {
+      if(currentLocationMarker){
           var userLatLng = currentLocationMarker.getLatLng();
           var bearing = getBearing(userLatLng.lat, userLatLng.lng, roadLat, roadLon);
           var cardinal = getCardinalDirection(bearing);
           var arrow = "";
-          switch(cardinal) {
+          switch(cardinal){
               case "N": arrow = "&#8593;"; break;
               case "NE": arrow = "&#8599;"; break;
               case "E": arrow = "&#8594;"; break;
@@ -292,28 +306,25 @@ out center;`;
       }
       return indicator;
   }
-  // Compute the RHQC code for a coordinate within a given bounding box (5 levels)
-  function getRHQCCode(lat, lng, bounds, maxLevel) {
+  // Compute RHQC code for a coordinate within a bounding box (5 levels)
+  function getRHQCCode(lat, lng, bounds, maxLevel){
       var code = "";
       var currentBounds = JSON.parse(JSON.stringify(bounds));
-      for (var level = 1; level <= maxLevel; level++) {
-          var south = currentBounds[0][0],
-              west = currentBounds[0][1],
-              north = currentBounds[1][0],
-              east = currentBounds[1][1];
-          var midLat = (south + north) / 2;
-          var midLng = (west + east) / 2;
-          if (lat >= midLat && lng <= midLng) {
-              code += "1";
+      for(var level = 1; level<=maxLevel; level++){
+          var south = currentBounds[0][0], west = currentBounds[0][1],
+              north = currentBounds[1][0], east = currentBounds[1][1];
+          var midLat = (south+north)/2, midLng = (west+east)/2;
+          if(lat>=midLat && lng<=midLng){
+              code+="1";
               currentBounds = [[midLat, west], [north, midLng]];
-          } else if (lat >= midLat && lng > midLng) {
-              code += "2";
+          } else if(lat>=midLat && lng>midLng){
+              code+="2";
               currentBounds = [[midLat, midLng], [north, east]];
-          } else if (lat < midLat && lng <= midLng) {
-              code += "3";
+          } else if(lat<midLat && lng<=midLng){
+              code+="3";
               currentBounds = [[south, west], [midLat, midLng]];
           } else {
-              code += "4";
+              code+="4";
               currentBounds = [[south, midLng], [midLat, east]];
           }
       }
@@ -323,8 +334,8 @@ out center;`;
   /***********************
    * FETCH & DISPLAY ROADS
    ***********************/
-  function fetchAndDisplayRoads() {
-      if (!gridBox) {
+  function fetchAndDisplayRoads(){
+      if(!gridBox){
           document.getElementById("roadsContainer").innerHTML = "No grid box defined.";
           return;
       }
@@ -337,59 +348,78 @@ out center;`;
 );
 out center;`;
       fetch("https://overpass-api.de/api/interpreter", {
-          method: "POST",
-          body: "data=" + encodeURIComponent(query)
+          method:"POST",
+          body:"data=" + encodeURIComponent(query)
       })
-      .then(function(response) { return response.json(); })
-      .then(function(data) { processRoadData(data.elements, bounds); })
-      .catch(function(error) {
+      .then(function(response){ return response.json(); })
+      .then(function(data){ processRoadData(data.elements, bounds); })
+      .catch(function(error){
           console.error("Error fetching roads:", error);
           document.getElementById("roadsContainer").innerHTML = "Error loading roads.";
       });
   }
-  function processRoadData(elements, gridBounds) {
+  function processRoadData(elements, gridBounds){
       var roads = [];
-      elements.forEach(function(elem) {
-          if (elem.type === "way" && elem.tags && elem.tags.name && elem.center) {
+      elements.forEach(function(elem){
+          if(elem.type==="way" && elem.tags && elem.tags.name && elem.center){
               roads.push({ name: elem.tags.name, lat: elem.center.lat, lon: elem.center.lon });
           }
       });
-      // Remove duplicate roads and sort alphabetically.
+      // Remove duplicates and sort alphabetically.
       var uniqueRoads = {};
-      roads.forEach(function(road) { uniqueRoads[road.name] = road; });
+      roads.forEach(function(road){ uniqueRoads[road.name] = road; });
       roads = Object.values(uniqueRoads);
-      roads.sort(function(a, b) { return a.name.localeCompare(b.name); });
+      roads.sort(function(a,b){ return a.name.localeCompare(b.name); });
+      
       var html = "";
-      roads.forEach(function(road) {
+      roads.forEach(function(road){
           var code = getRHQCCode(road.lat, road.lon, [[gridBounds.getSouth(), gridBounds.getWest()], [gridBounds.getNorth(), gridBounds.getEast()]], 5);
-          // Nearest fire station using static data.
+          // Find nearest fire station (F) using static data.
           var nearestStation = null, minStationDist = Infinity;
-          fireStations.forEach(function(station) {
+          fireStations.forEach(function(station){
               var d = getDistanceMiles(road.lat, road.lon, station.lat, station.lon);
-              if (d < minStationDist) { minStationDist = d; nearestStation = station; }
+              if(d < minStationDist){ minStationDist = d; nearestStation = station; }
           });
-          // Compute cardinal direction from the nearest station to the road.
+          // Compute bearing from the nearest station to the road.
           var stationBearing = nearestStation ? getBearing(nearestStation.lat, nearestStation.lon, road.lat, road.lon) : null;
           var stationCardinal = stationBearing !== null ? getCardinalDirection(stationBearing) : "";
           var stationInfo = nearestStation ? (minStationDist.toFixed(1) + " mi (Dir: " + stationCardinal + ")") : "N/A";
-          // Append user direction indicator (from current location to road)
+          // Append user direction indicator (from current location to the road)
           var userDir = getUserDirectionIndicator(road.lat, road.lon);
           html += "<div class='road-item' onclick='zoomToRoad(" + road.lat + ", " + road.lon + ")'>";
           html += "<span class='road-code'>" + code + "</span> " + road.name + userDir;
           html += "<div class='road-info'>Fire Station: " + stationInfo + "</div>";
           html += "</div>";
       });
-      if (html === "") html = "No roads found.";
+      if(html==="") html = "No roads found.";
       document.getElementById("roadsContainer").innerHTML = html;
+      applyRoadFilter(); // apply filter if any text is in the filter box
+  }
+
+  /***********************
+   * ROAD LIST FILTERING
+   ***********************/
+  // When the filter input text changes, filter the road list.
+  document.getElementById("roadFilter").addEventListener("input", applyRoadFilter);
+  function applyRoadFilter(){
+      var filterText = document.getElementById("roadFilter").value.toLowerCase();
+      var roadItems = document.querySelectorAll("#roadsContainer .road-item");
+      roadItems.forEach(function(item){
+          if(item.textContent.toLowerCase().indexOf(filterText) > -1){
+              item.style.display = "";
+          } else {
+              item.style.display = "none";
+          }
+      });
   }
 
   /***********************
    * MAIN ROAD & ROUTE DRAWING
    ***********************/
-  // Fetch main roads tagged as highway=primary.
+  // Fetch main roads (highway=primary).
   var mainRoads = [];
-  function fetchMainRoads() {
-      if (!gridBox) return;
+  function fetchMainRoads(){
+      if(!gridBox) return;
       var bounds = gridBox.getBounds();
       var south = bounds.getSouth(), west = bounds.getWest(), north = bounds.getNorth(), east = bounds.getEast();
       var bbox = south + "," + west + "," + north + "," + east;
@@ -399,50 +429,49 @@ out center;`;
 );
 out center;`;
       fetch("https://overpass-api.de/api/interpreter", { method:"POST", body:"data=" + encodeURIComponent(query) })
-      .then(function(response) { return response.json(); })
-      .then(function(data) {
-          mainRoads = data.elements.map(function(e) { 
+      .then(function(response){ return response.json(); })
+      .then(function(data){
+          mainRoads = data.elements.map(function(e){ 
               return { lat: e.center.lat, lon: e.center.lon, name: e.tags.name || "Main Road" }; 
           });
       }).catch(function(error){ console.error("Error fetching main roads:", error); });
   }
 
   // When a road is selected, determine a route using two segments:
-  // 1) From the nearest fire station (F) to a main road point (M) that minimizes F->M + M->R.
+  // 1) From the nearest fire station (F) to a main road point (M) that minimizes the sum F->M + M->R.
   // 2) From that main road point (M) to the selected road (R).
-  function zoomToRoad(lat, lon) {
+  function zoomToRoad(lat, lon){
       map.setView([lat, lon], 18);
-      // Find nearest fire station (F)
+      // Determine nearest fire station (F) from our static data.
       var nearestStation = null, minStationDist = Infinity;
-      fireStations.forEach(function(station) {
+      fireStations.forEach(function(station){
           var d = getDistanceMiles(lat, lon, station.lat, station.lon);
-          if (d < minStationDist) { minStationDist = d; nearestStation = station; }
+          if(d < minStationDist){ minStationDist = d; nearestStation = station; }
       });
       // Fetch main roads if needed.
       fetchMainRoads();
-      // Delay for mainRoads update
-      setTimeout(function() {
+      // Delay to allow mainRoads to update.
+      setTimeout(function(){
           var selectedRoad = { lat: lat, lon: lon };
           var bestMainRoad = null, bestTotal = Infinity;
-          mainRoads.forEach(function(mRoad) {
+          mainRoads.forEach(function(mRoad){
               var d1 = getDistanceMiles(nearestStation.lat, nearestStation.lon, mRoad.lat, mRoad.lon);
               var d2 = getDistanceMiles(mRoad.lat, mRoad.lon, selectedRoad.lat, selectedRoad.lon);
               var total = d1 + d2;
-              if (total < bestTotal) { bestTotal = total; bestMainRoad = mRoad; }
+              if(total < bestTotal){ bestTotal = total; bestMainRoad = mRoad; }
           });
-          if (nearestStation && bestMainRoad) {
-              if (currentRouteLine) { map.removeLayer(currentRouteLine); }
-              var seg1 = L.polyline([[nearestStation.lat, nearestStation.lon], [bestMainRoad.lat, bestMainRoad.lon]], { color: "orange", weight: 3 });
-              var seg2 = L.polyline([[bestMainRoad.lat, bestMainRoad.lon], [lat, lon]], { color: "orange", weight: 3 });
-              currentRouteLine = L.layerGroup([seg1, seg2]).addTo(map);
-              var totalDistance = (getDistanceMiles(nearestStation.lat, nearestStation.lon, bestMainRoad.lat, bestMainRoad.lon) +
-                                   getDistanceMiles(bestMainRoad.lat, bestMainRoad.lon, lat, lon)).toFixed(1);
-              seg2.bindTooltip(totalDistance + " mi", { permanent: true, direction: 'center' }).openTooltip();
+          if(nearestStation && bestMainRoad){
+              if(currentRouteLine){ map.removeLayer(currentRouteLine); }
+              var segment1 = L.polyline([[nearestStation.lat, nearestStation.lon], [bestMainRoad.lat, bestMainRoad.lon]], { color: "orange", weight: 3 });
+              var segment2 = L.polyline([[bestMainRoad.lat, bestMainRoad.lon], [selectedRoad.lat, selectedRoad.lon]], { color: "orange", weight: 3 });
+              currentRouteLine = L.layerGroup([segment1, segment2]).addTo(map);
+              var totalDistance = (getDistanceMiles(nearestStation.lat, nearestStation.lon, bestMainRoad.lat, bestMainRoad.lon) + getDistanceMiles(bestMainRoad.lat, bestMainRoad.lon, lat, lon)).toFixed(1);
+              segment2.bindTooltip(totalDistance + " mi", { permanent: true, direction: 'center' }).openTooltip();
           } else {
-              if (currentRouteLine) { map.removeLayer(currentRouteLine); }
+              if(currentRouteLine){ map.removeLayer(currentRouteLine); }
               currentRouteLine = L.polyline([[nearestStation.lat, nearestStation.lon], [lat, lon]], { color: "orange", weight: 3 }).addTo(map);
-              var distance = getDistanceMiles(nearestStation.lat, nearestStation.lon, lat, lon).toFixed(1);
-              currentRouteLine.bindTooltip(distance + " mi", { permanent: true, direction: 'center' }).openTooltip();
+              var d = getDistanceMiles(nearestStation.lat, nearestStation.lon, lat, lon).toFixed(1);
+              currentRouteLine.bindTooltip(d + " mi", { permanent: true, direction: 'center' }).openTooltip();
           }
       }, 1000);
       L.circleMarker([lat, lon], { radius: 6, color: "#FF0000" }).addTo(map)
@@ -454,11 +483,11 @@ out center;`;
   /***********************
    * ROAD LIST PANEL TOGGLING
    ***********************/
-  document.getElementById("toggleRoadListBtn").addEventListener("click", function() {
+  document.getElementById("toggleRoadListBtn").addEventListener("click", function(){
       document.getElementById("roadList").style.display = "none";
       document.getElementById("roadListToggle").style.display = "block";
   });
-  document.getElementById("roadListToggle").addEventListener("click", function() {
+  document.getElementById("roadListToggle").addEventListener("click", function(){
       document.getElementById("roadList").style.display = "block";
       document.getElementById("roadListToggle").style.display = "none";
   });
@@ -468,7 +497,7 @@ out center;`;
    ***********************/
   document.getElementById("searchBtn").addEventListener("click", function(){
       var address = document.getElementById("addressInput").value;
-      if (!address) return;
+      if(!address) return;
       var url = "https://nominatim.openstreetmap.org/search?format=json&q=" + encodeURIComponent(address);
       fetch(url)
           .then(function(response){ return response.json(); })
