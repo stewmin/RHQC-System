@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>RHQC Mapping Prototype</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+  <style>
+      /* Fullscreen map */
+      #map {
+          position: absolute;
+          top: 0;
+          bottom: 0;
+          right: 0;
+          left: 0;
+      }
+      /* Style for grid labels */
+      .grid-label {
+          font-size: 12px;
+          font-weight: bold;
+          color: blue;
+          background: rgba(255,255,255,0.5);
+          padding: 2px;
+      }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+<script>
+// Initialize the map centered on Hopkinsville, KY (approximate center)
+var map = L.map('map').setView([36.85, -87.55], 13);
+
+// Add the OpenStreetMap tile layer
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+   maxZoom: 19,
+   attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+// Define an approximate bounding box for Hopkinsville
+// Format: [[south, west], [north, east]]
+var hopkinsvilleBounds = [[36.75, -87.65], [36.95, -87.45]];
+
+/**
+ * Recursively subdivides a bounding box into four quadrants (NW, NE, SW, SE) and draws them.
+ * Each quadrant gets a unique code formed by appending a digit to the parent's code:
+ *  "1" for NW, "2" for NE, "3" for SW, "4" for SE.
+ *
+ * @param {Array} bounds - [[south, west], [north, east]]
+ * @param {string} code - The current RHQC code string.
+ * @param {number} level - The current recursive level.
+ * @param {number} maxLevel - Maximum levels of subdivision.
+ */
+function subdivide(bounds, code, level, maxLevel) {
+    // Draw the current rectangle with a color based on level
+    var rect = L.rectangle(bounds, { color: getColorForLevel(level), weight: 1 });
+    rect.addTo(map).bindPopup("Grid Code: " + (code || "Root"));
+
+    // At max level, add a label in the center
+    if (level >= maxLevel) {
+        var centerLat = (bounds[0][0] + bounds[1][0]) / 2;
+        var centerLng = (bounds[0][1] + bounds[1][1]) / 2;
+        L.marker([centerLat, centerLng], {icon: L.divIcon({
+            className: 'grid-label',
+            html: code,
+            iconSize: [30, 10]
+        })}).addTo(map);
+        return;
+    }
+    
+    var south = bounds[0][0], west = bounds[0][1];
+    var north = bounds[1][0], east = bounds[1][1];
+    var midLat = (south + north) / 2;
+    var midLng = (west + east) / 2;
+    
+    // Define sub-quadrant bounds with their respective codes:
+    // NW quadrant
+    var quadrant1 = { code: code + "1", bounds: [[midLat, west], [north, midLng]] };
+    // NE quadrant
+    var quadrant2 = { code: code + "2", bounds: [[midLat, midLng], [north, east]] };
+    // SW quadrant
+    var quadrant3 = { code: code + "3", bounds: [[south, west], [midLat, midLng]] };
+    // SE quadrant
+    var quadrant4 = { code: code + "4", bounds: [[south, midLng], [midLat, east]] };
+    
+    [quadrant1, quadrant2, quadrant3, quadrant4].forEach(function(q) {
+        subdivide(q.bounds, q.code, level + 1, maxLevel);
+    });
+}
+
+/**
+ * Returns a color based on the subdivision level for visual differentiation.
+ * Modify the color set as needed.
+ *
+ * @param {number} level
+ * @returns {string} - a HEX color string.
+ */
+function getColorForLevel(level) {
+    var colors = ["#FF0000", "#00FF00", "#0000FF", "#FF00FF", "#00FFFF", "#FFFF00"];
+    return colors[(level - 1) % colors.length];
+}
+
+// Start the recursive subdivision with 5 levels.
+subdivide(hopkinsvilleBounds, "", 1, 5);
+</script>
+</body>
+</html>
