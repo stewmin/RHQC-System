@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>RHQC Mapping Prototype – Fire Services Info (Location Prompt & Distance)</title>
+  <title>RHQC Mapping Prototype – Enhanced Emergency Data</title>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <!-- Leaflet CSS -->
@@ -115,11 +115,11 @@
       attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
 
-  // Create a FeatureGroup for editable layers (our grid box)
+  // Create a FeatureGroup for editable layers (the grid box)
   var drawnItems = new L.FeatureGroup();
   map.addLayer(drawnItems);
 
-  // Initialize Leaflet Draw control (only rectangle allowed)
+  // Initialize Leaflet Draw control (allowing rectangle drawing)
   var drawControl = new L.Control.Draw({
       draw: {
           polyline: false,
@@ -142,13 +142,13 @@
   });
   map.addControl(drawControl);
 
-  // Global arrays to store fire station and hydrant locations (fetched once)
+  // Global arrays to store fire station and hydrant locations (currently using Overpass queries)
   var fireStations = [];
   var fireHydrants = [];
   // Define a bounding box for Hopkinsville (for Overpass queries)
   var hopkinsvilleBBox = "36.75,-87.65,36.95,-87.45";
 
-  // Fetch fire stations via Overpass API
+  // Fetch fire stations via Overpass API (you may consider replacing this with local official data)
   function fetchFireStations() {
       var query = `[out:json][timeout:25];
 node["amenity"="fire_station"](${hopkinsvilleBBox});
@@ -168,7 +168,7 @@ out center;`;
       });
   }
 
-  // Fetch fire hydrants via Overpass API
+  // Fetch fire hydrants via Overpass API (again, consider a better source if available)
   function fetchFireHydrants() {
       var query = `[out:json][timeout:25];
 node["emergency"="fire_hydrant"](${hopkinsvilleBBox});
@@ -188,35 +188,61 @@ out center;`;
       });
   }
 
-  // Immediately fetch fire stations and hydrants on load
+  // Immediately fetch fire stations and hydrants when the page loads
   fetchFireStations();
   fetchFireHydrants();
 
-  // Geolocation: track user's current location (blue dot)
-  var currentLocationMarker = null;
-  var currentRouteLine = null;
+  // Function to fetch recent emergency 911 call locations (dummy placeholder)
+  // In a production system, integrate with an authorized API (for example, from Hopkinsville Fire Dept. or Christian County Emergency Dispatch)
+  var emergencyCalls = [];
+  function fetchEmergencyCalls() {
+      // Dummy data: In a real system, this would be a dynamic API request for 911 call locations in the past 12 hours within the drawn box.
+      // Here we simulate with a couple of hard-coded calls.
+      // For example purposes, these calls are within Hopkinsville.
+      emergencyCalls = [
+          { lat: 36.87, lon: -87.55, time: "10:15 AM" },
+          { lat: 36.82, lon: -87.60, time: "11:30 AM" }
+      ];
+      displayEmergencyCalls();
+  }
+  // Place markers for emergency calls that fall within the drawn grid box
+  var emergencyCallLayer = new L.LayerGroup().addTo(map);
+  function displayEmergencyCalls() {
+      emergencyCallLayer.clearLayers();
+      if (!gridBox) return;
+      var bounds = gridBox.getBounds();
+      emergencyCalls.forEach(function(call) {
+          var latlng = L.latLng(call.lat, call.lon);
+          if (bounds.contains(latlng)) {
+              L.marker(latlng, { icon: L.icon({ 
+                  iconUrl: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png', // sample 911 icon URL; replace with your own
+                  iconSize: [24, 24]
+              })}).addTo(emergencyCallLayer)
+              .bindPopup("911 Call at " + call.time);
+          }
+      });
+  }
 
-  // When the "Current Location" button is clicked, explicitly request location permission
-  document.getElementById("currentLocationBtn").addEventListener("click", function() {
+  // Request current location automatically on page load
+  // Note: Some devices (particularly iOS) may still require a user gesture.
+  window.addEventListener("load", function() {
       navigator.geolocation.getCurrentPosition(function(position) {
           var lat = position.coords.latitude;
           var lon = position.coords.longitude;
           if (!currentLocationMarker) {
-              currentLocationMarker = L.circleMarker([lat, lon], {
-                radius: 8, color: "#0000FF", fillColor: "#0000FF", fillOpacity: 1
-              }).addTo(map)
-              .bindPopup("Your current location");
+              currentLocationMarker = L.circleMarker([lat, lon], { radius: 8, color: "#0000FF", fillColor: "#0000FF", fillOpacity: 1 })
+                  .addTo(map)
+                  .bindPopup("Your current location");
           } else {
               currentLocationMarker.setLatLng([lat, lon]);
           }
           map.setView([lat, lon], 16);
-          currentLocationMarker.openPopup();
       }, function(error) {
-          alert("Location access denied or unavailable.");
+          console.error("Auto location error:", error);
       }, { enableHighAccuracy: true });
   });
 
-  // Also try to continuously update location (if permission is granted)
+  // Also continuously update current location (if already granted)
   if ("geolocation" in navigator) {
       navigator.geolocation.watchPosition(function(position) {
           var lat = position.coords.latitude;
@@ -229,7 +255,7 @@ out center;`;
       }, { enableHighAccuracy: true });
   }
 
-  // Helper functions for calculations
+  // Helper functions for distance and bearing calculations
   function toRad(value) { return value * Math.PI / 180; }
   function toDeg(rad) { return rad * 180 / Math.PI; }
   // Haversine distance (in miles)
@@ -253,7 +279,7 @@ out center;`;
       brng = toDeg(brng);
       return (brng + 360) % 360;
   }
-  // Convert bearing to cardinal direction
+  // Convert bearing to cardinal direction (N, NE, E, etc.)
   function getCardinalDirection(deg) {
       var directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
       var index = Math.round(deg / 45) % 8;
@@ -261,7 +287,7 @@ out center;`;
   }
 
   // Compute the RHQC code for a coordinate within a bounding box (5 levels)
-  // Bounding box: [[south, west], [north, east]]
+  // Bounding box format: [[south, west], [north, east]]
   function getRHQCCode(lat, lng, bounds, maxLevel) {
       var code = "";
       var currentBounds = JSON.parse(JSON.stringify(bounds));
@@ -291,20 +317,22 @@ out center;`;
 
   // Variable to store the drawn grid box (invisible)
   var gridBox = null;
-  // When a new rectangle is drawn, clear previous layers, add the new one,
-  // set its style to invisible, and fetch roads within its bounds.
+  // When a new rectangle is drawn via Leaflet.draw, keep it until a new one is drawn and fetch roads.
   map.on(L.Draw.Event.CREATED, function(event) {
       var layer = event.layer;
       drawnItems.clearLayers();
       drawnItems.addLayer(layer);
       layer.setStyle({ opacity: 0, fillOpacity: 0 });
       gridBox = layer;
+      // Fetch roads and emergency calls once the box is drawn
       fetchAndDisplayRoads();
+      fetchEmergencyCalls();
   });
-  // When the rectangle is edited, update the grid box and re-fetch roads.
+  // When the rectangle is edited, update the grid box and re-fetch roads and emergency calls.
   map.on('draw:edited', function(e) {
       gridBox = drawnItems.getLayers()[0];
       fetchAndDisplayRoads();
+      fetchEmergencyCalls();
   });
 
   // Address search via Nominatim API
@@ -352,7 +380,7 @@ out center;`;
       });
   }
 
-  // Process road data from Overpass: compute RHQC code and find nearest fire station/hydrant with distance and bearing.
+  // Process road data from Overpass API
   function processRoadData(elements, gridBounds) {
       var roads = [];
       elements.forEach(function(elem) {
@@ -360,7 +388,7 @@ out center;`;
               roads.push({ name: elem.tags.name, lat: elem.center.lat, lon: elem.center.lon });
           }
       });
-      // Remove duplicates and sort alphabetically
+      // Remove duplicate roads by name and sort alphabetically.
       var uniqueRoads = {};
       roads.forEach(function(road) { uniqueRoads[road.name] = road; });
       roads = Object.values(uniqueRoads);
@@ -370,7 +398,7 @@ out center;`;
       roads.forEach(function(road) {
           var code = getRHQCCode(road.lat, road.lon, [[gridBounds.getSouth(), gridBounds.getWest()], [gridBounds.getNorth(), gridBounds.getEast()]], 5);
           
-          // Nearest fire station: calculate distance and bearing FROM the fire station TO the road
+          // Find nearest fire station: compute distance and bearing (from the station to the road)
           var nearestStation = null, minStationDist = Infinity;
           fireStations.forEach(function(station) {
               var d = getDistanceMiles(road.lat, road.lon, station.lat, station.lon);
@@ -379,7 +407,7 @@ out center;`;
           var stationInfo = nearestStation ? 
               (minStationDist.toFixed(1) + " mi " + getCardinalDirection(getBearing(nearestStation.lat, nearestStation.lon, road.lat, road.lon))) : "N/A";
           
-          // Nearest fire hydrant
+          // Find nearest fire hydrant
           var nearestHydrant = null, minHydrantDist = Infinity;
           fireHydrants.forEach(function(hydrant) {
               var d = getDistanceMiles(road.lat, road.lon, hydrant.lat, hydrant.lon);
@@ -397,8 +425,8 @@ out center;`;
       document.getElementById("roadsContainer").innerHTML = html;
   }
 
-  // Zoom to a road, draw a route from current location, display the distance along the route,
-  // and automatically minimize (hide) the road list panel.
+  // Function to zoom to a road, draw a route from current location with distance displayed,
+  // and automatically hide the road list panel.
   function zoomToRoad(lat, lon) {
       map.setView([lat, lon], 18);
       if (currentLocationMarker) {
@@ -414,16 +442,46 @@ out center;`;
       document.getElementById("roadListToggle").style.display = "block";
   }
 
-  // Toggle button inside road list to hide the panel
+  // Toggle road list panel buttons
   document.getElementById("toggleRoadListBtn").addEventListener("click", function() {
       document.getElementById("roadList").style.display = "none";
       document.getElementById("roadListToggle").style.display = "block";
   });
-  // Fixed button to show the road list when minimized
   document.getElementById("roadListToggle").addEventListener("click", function() {
       document.getElementById("roadList").style.display = "block";
       document.getElementById("roadListToggle").style.display = "none";
   });
+
+  // For demonstration, fetch emergency 911 call data (dummy data) and display markers.
+  var emergencyCallLayer = new L.LayerGroup().addTo(map);
+  function fetchEmergencyCalls() {
+      // In a real implementation, you would integrate with an authorized API (e.g., from Christian County Emergency Dispatch)
+      // that provides the recent (past 12 hours) 911 call locations.
+      // Here we use dummy data.
+      emergencyCalls = [
+          { lat: 36.87, lon: -87.55, time: "10:15 AM" },
+          { lat: 36.82, lon: -87.60, time: "11:30 AM" }
+      ];
+      displayEmergencyCalls();
+  }
+  function displayEmergencyCalls() {
+      emergencyCallLayer.clearLayers();
+      if (!gridBox) return;
+      var bounds = gridBox.getBounds();
+      emergencyCalls.forEach(function(call) {
+          var latlng = L.latLng(call.lat, call.lon);
+          if (bounds.contains(latlng)) {
+              L.marker(latlng, {
+                  icon: L.icon({
+                      iconUrl: 'https://cdn-icons-png.flaticon.com/512/1041/1041916.png', // sample icon; replace as needed
+                      iconSize: [24, 24]
+                  })
+              }).addTo(emergencyCallLayer)
+              .bindPopup("911 Call at " + call.time);
+          }
+      });
+  }
+
   </script>
 </body>
 </html>
