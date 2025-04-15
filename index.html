@@ -16,7 +16,7 @@
           position: absolute;
           top: 5px;
           left: 10px;
-          z-index: 1000;
+          z-index: 1100;
           background: rgba(255,255,255,0.9);
           padding: 8px;
           border-radius: 4px;
@@ -30,12 +30,22 @@
           max-height: calc(100% - 60px);
           overflow-y: auto;
           background: rgba(255,255,255,0.9);
-          z-index: 1000;
+          z-index: 1100;
           padding: 10px;
           font-family: Arial, sans-serif;
           font-size: 14px;
       }
-      #roadList h3 { margin-top: 0; }
+      #roadList h3 {
+          margin: 0;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+      }
+      #roadList h3 button {
+          font-size: 12px;
+          padding: 2px 4px;
+          cursor: pointer;
+      }
       .road-item {
           padding: 5px;
           border-bottom: 1px solid #ccc;
@@ -53,18 +63,37 @@
           border-radius: 3px;
           margin-right: 5px;
       }
+      /* Button to show road list when minimized */
+      #roadListToggle {
+          position: absolute;
+          top: 60px;
+          right: 0;
+          z-index: 1200;
+          display: none;
+          background: rgba(255,255,255,0.9);
+          padding: 5px 10px;
+          border-radius: 0 0 0 5px;
+          cursor: pointer;
+          font-family: Arial, sans-serif;
+          font-size: 14px;
+      }
   </style>
 </head>
 <body>
   <div id="searchBar">
       <input type="text" id="addressInput" placeholder="Enter your address" size="30" />
       <button id="searchBtn">Search</button>
+      <button id="currentLocationBtn">Current Location</button>
   </div>
   <div id="map"></div>
   <div id="roadList">
-      <h3>Road List</h3>
+      <h3>
+          Road List
+          <button id="toggleRoadListBtn">Close</button>
+      </h3>
       <div id="roadsContainer">No roads loaded.</div>
   </div>
+  <div id="roadListToggle">Show Road List</div>
 
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
@@ -107,7 +136,7 @@
   });
   map.addControl(drawControl);
 
-  // Variables for the current location marker and current route polyline
+  // Variables for current location marker and route polyline
   var currentLocationMarker = null;
   var currentRouteLine = null;
 
@@ -129,6 +158,16 @@
   } else {
       alert("Geolocation is not available in your browser.");
   }
+
+  // "Current Location" button: pan the map to user's location when clicked
+  document.getElementById("currentLocationBtn").addEventListener("click", function() {
+      if (currentLocationMarker) {
+          map.setView(currentLocationMarker.getLatLng(), 16);
+          currentLocationMarker.openPopup();
+      } else {
+          alert("Current location is not available.");
+      }
+  });
 
   // Function to compute the RHQC code for a coordinate given a bounding box and max level.
   // The bounding box is in the format [[south, west], [north, east]]
@@ -264,7 +303,8 @@ out center;`;
       document.getElementById("roadsContainer").innerHTML = html;
   }
 
-  // Function to zoom to a road when its item is clicked and draw a route from the current location
+  // Function to zoom to a road when its item is clicked and draw a route from the current location;
+  // Also minimizes (hides) the road list.
   function zoomToRoad(lat, lon) {
       map.setView([lat, lon], 18);
       if (currentLocationMarker) {
@@ -274,7 +314,22 @@ out center;`;
       }
       L.circleMarker([lat, lon], { radius: 6, color: "#FF0000" }).addTo(map)
           .bindPopup("Road Location").openPopup();
+      // Minimize the road list automatically
+      document.getElementById("roadList").style.display = "none";
+      document.getElementById("roadListToggle").style.display = "block";
   }
+
+  // Toggle button inside the road list to close/hide the panel
+  document.getElementById("toggleRoadListBtn").addEventListener("click", function() {
+      document.getElementById("roadList").style.display = "none";
+      document.getElementById("roadListToggle").style.display = "block";
+  });
+
+  // Fixed button to show the road list when it is minimized
+  document.getElementById("roadListToggle").addEventListener("click", function() {
+      document.getElementById("roadList").style.display = "block";
+      document.getElementById("roadListToggle").style.display = "none";
+  });
   </script>
 </body>
 </html>
