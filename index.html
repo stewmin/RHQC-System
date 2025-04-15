@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>RHQC Mapping Prototype – Fire Services Info</title>
+  <title>RHQC Mapping Prototype – Fire Services Info (Location Prompt & Distance)</title>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <!-- Leaflet CSS -->
@@ -119,7 +119,7 @@
   var drawnItems = new L.FeatureGroup();
   map.addLayer(drawnItems);
 
-  // Initialize Leaflet Draw control (only allowing rectangle)
+  // Initialize Leaflet Draw control (only rectangle allowed)
   var drawControl = new L.Control.Draw({
       draw: {
           polyline: false,
@@ -145,7 +145,7 @@
   // Global arrays to store fire station and hydrant locations (fetched once)
   var fireStations = [];
   var fireHydrants = [];
-  // Define a bounding box for Hopkinsville (south,west,north,east) as a string for Overpass queries
+  // Define a bounding box for Hopkinsville (for Overpass queries)
   var hopkinsvilleBBox = "36.75,-87.65,36.95,-87.45";
 
   // Fetch fire stations via Overpass API
@@ -195,54 +195,55 @@ out center;`;
   // Geolocation: track user's current location (blue dot)
   var currentLocationMarker = null;
   var currentRouteLine = null;
+
+  // When the "Current Location" button is clicked, explicitly request location permission
+  document.getElementById("currentLocationBtn").addEventListener("click", function() {
+      navigator.geolocation.getCurrentPosition(function(position) {
+          var lat = position.coords.latitude;
+          var lon = position.coords.longitude;
+          if (!currentLocationMarker) {
+              currentLocationMarker = L.circleMarker([lat, lon], {
+                radius: 8, color: "#0000FF", fillColor: "#0000FF", fillOpacity: 1
+              }).addTo(map)
+              .bindPopup("Your current location");
+          } else {
+              currentLocationMarker.setLatLng([lat, lon]);
+          }
+          map.setView([lat, lon], 16);
+          currentLocationMarker.openPopup();
+      }, function(error) {
+          alert("Location access denied or unavailable.");
+      }, { enableHighAccuracy: true });
+  });
+
+  // Also try to continuously update location (if permission is granted)
   if ("geolocation" in navigator) {
       navigator.geolocation.watchPosition(function(position) {
           var lat = position.coords.latitude;
           var lon = position.coords.longitude;
-          if (!currentLocationMarker) {
-              currentLocationMarker = L.circleMarker([lat, lon], { radius: 8, color: "#0000FF", fillColor: "#0000FF", fillOpacity: 1 })
-                  .addTo(map)
-                  .bindPopup("Your current location");
-          } else {
+          if (currentLocationMarker) {
               currentLocationMarker.setLatLng([lat, lon]);
           }
       }, function(error) {
-          console.error("Geolocation error:", error);
+          console.error("WatchPosition error:", error);
       }, { enableHighAccuracy: true });
-  } else {
-      alert("Geolocation is not available in your browser.");
   }
 
-  // "Current Location" button: pan to user's current location
-  document.getElementById("currentLocationBtn").addEventListener("click", function() {
-      if (currentLocationMarker) {
-          map.setView(currentLocationMarker.getLatLng(), 16);
-          currentLocationMarker.openPopup();
-      } else {
-          alert("Current location is not available.");
-      }
-  });
-
-  // Function to convert degrees to radians
-  function toRad(value) {
-      return value * Math.PI / 180;
-  }
-  // Function to convert radians to degrees
-  function toDeg(rad) {
-      return rad * 180 / Math.PI;
-  }
-  // Haversine distance (in miles) between two lat/lon points
+  // Helper functions for calculations
+  function toRad(value) { return value * Math.PI / 180; }
+  function toDeg(rad) { return rad * 180 / Math.PI; }
+  // Haversine distance (in miles)
   function getDistanceMiles(lat1, lon1, lat2, lon2) {
-      var R = 3958.8; // Radius of Earth in miles
+      var R = 3958.8; // Earth's radius in miles
       var dLat = toRad(lat2 - lat1);
       var dLon = toRad(lon2 - lon1);
-      var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      var a = Math.sin(dLat / 2) ** 2 +
               Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+              Math.sin(dLon / 2) ** 2;
       var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       return R * c;
   }
-  // Calculate bearing (in degrees) from point A to point B
+  // Bearing from point A to B (in degrees)
   function getBearing(lat1, lon1, lat2, lon2) {
       var dLon = toRad(lon2 - lon1);
       var y = Math.sin(dLon) * Math.cos(toRad(lat2));
@@ -252,18 +253,18 @@ out center;`;
       brng = toDeg(brng);
       return (brng + 360) % 360;
   }
-  // Convert bearing in degrees to cardinal direction (N, NE, E, etc.)
+  // Convert bearing to cardinal direction
   function getCardinalDirection(deg) {
       var directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
       var index = Math.round(deg / 45) % 8;
       return directions[index];
   }
 
-  // Function to compute the RHQC code for a given coordinate within a bounding box (5 levels)
-  // The bounding box is in the format [[south, west], [north, east]]
+  // Compute the RHQC code for a coordinate within a bounding box (5 levels)
+  // Bounding box: [[south, west], [north, east]]
   function getRHQCCode(lat, lng, bounds, maxLevel) {
       var code = "";
-      var currentBounds = JSON.parse(JSON.stringify(bounds)); // clone bounds
+      var currentBounds = JSON.parse(JSON.stringify(bounds));
       for (var level = 1; level <= maxLevel; level++) {
           var south = currentBounds[0][0],
               west = currentBounds[0][1],
@@ -288,28 +289,25 @@ out center;`;
       return code;
   }
 
-  // Variable to store the drawn grid box (which will remain invisible)
+  // Variable to store the drawn grid box (invisible)
   var gridBox = null;
-
-  // When a new rectangle is created via Leaflet.draw, clear previous layers, add the new one,
+  // When a new rectangle is drawn, clear previous layers, add the new one,
   // set its style to invisible, and fetch roads within its bounds.
   map.on(L.Draw.Event.CREATED, function(event) {
       var layer = event.layer;
-      drawnItems.clearLayers(); // only one grid box at a time
+      drawnItems.clearLayers();
       drawnItems.addLayer(layer);
-      // Make the rectangle invisible
       layer.setStyle({ opacity: 0, fillOpacity: 0 });
       gridBox = layer;
       fetchAndDisplayRoads();
   });
-
-  // When the rectangle is edited, update the grid box and fetch roads again.
+  // When the rectangle is edited, update the grid box and re-fetch roads.
   map.on('draw:edited', function(e) {
       gridBox = drawnItems.getLayers()[0];
       fetchAndDisplayRoads();
   });
 
-  // Address search using Nominatim API
+  // Address search via Nominatim API
   document.getElementById("searchBtn").addEventListener("click", function() {
       var address = document.getElementById("addressInput").value;
       if (!address) return;
@@ -328,17 +326,14 @@ out center;`;
           });
   });
 
-  // Function to fetch roads within the drawn grid box (using Overpass API)
+  // Function to fetch roads within the drawn grid box using Overpass API
   function fetchAndDisplayRoads() {
       if (!gridBox) {
           document.getElementById("roadsContainer").innerHTML = "No grid box defined.";
           return;
       }
       var bounds = gridBox.getBounds();
-      var south = bounds.getSouth(),
-          west = bounds.getWest(),
-          north = bounds.getNorth(),
-          east = bounds.getEast();
+      var south = bounds.getSouth(), west = bounds.getWest(), north = bounds.getNorth(), east = bounds.getEast();
       var bbox = south + "," + west + "," + north + "," + east;
       var query = `[out:json][timeout:25];
 (
@@ -350,70 +345,48 @@ out center;`;
           body: "data=" + encodeURIComponent(query)
       })
       .then(function(response) { return response.json(); })
-      .then(function(data) {
-          processRoadData(data.elements, bounds);
-      })
+      .then(function(data) { processRoadData(data.elements, bounds); })
       .catch(function(error) {
           console.error("Error fetching roads:", error);
           document.getElementById("roadsContainer").innerHTML = "Error loading roads.";
       });
   }
 
-  // Process road data from Overpass API response: filter roads with a name and center,
-  // then for each road compute its RHQC code and additionally find the nearest fire station and hydrant.
+  // Process road data from Overpass: compute RHQC code and find nearest fire station/hydrant with distance and bearing.
   function processRoadData(elements, gridBounds) {
       var roads = [];
       elements.forEach(function(elem) {
           if (elem.type === "way" && elem.tags && elem.tags.name && elem.center) {
-              roads.push({
-                  name: elem.tags.name,
-                  lat: elem.center.lat,
-                  lon: elem.center.lon
-              });
+              roads.push({ name: elem.tags.name, lat: elem.center.lat, lon: elem.center.lon });
           }
       });
-      // Remove duplicate roads by name and sort alphabetically
+      // Remove duplicates and sort alphabetically
       var uniqueRoads = {};
-      roads.forEach(function(road) {
-          uniqueRoads[road.name] = road;
-      });
+      roads.forEach(function(road) { uniqueRoads[road.name] = road; });
       roads = Object.values(uniqueRoads);
-      roads.sort(function(a, b) {
-          return a.name.localeCompare(b.name);
-      });
+      roads.sort(function(a, b) { return a.name.localeCompare(b.name); });
+      
       var html = "";
       roads.forEach(function(road) {
           var code = getRHQCCode(road.lat, road.lon, [[gridBounds.getSouth(), gridBounds.getWest()], [gridBounds.getNorth(), gridBounds.getEast()]], 5);
           
-          // Find nearest fire station to the road
+          // Nearest fire station: calculate distance and bearing FROM the fire station TO the road
           var nearestStation = null, minStationDist = Infinity;
           fireStations.forEach(function(station) {
               var d = getDistanceMiles(road.lat, road.lon, station.lat, station.lon);
               if (d < minStationDist) { minStationDist = d; nearestStation = station; }
           });
-          var stationInfo = "";
-          if (nearestStation) {
-              var bearingStation = getBearing(road.lat, road.lon, nearestStation.lat, nearestStation.lon);
-              var directionStation = getCardinalDirection(bearingStation);
-              stationInfo = minStationDist.toFixed(1) + " mi " + directionStation;
-          } else {
-              stationInfo = "N/A";
-          }
+          var stationInfo = nearestStation ? 
+              (minStationDist.toFixed(1) + " mi " + getCardinalDirection(getBearing(nearestStation.lat, nearestStation.lon, road.lat, road.lon))) : "N/A";
           
-          // Find nearest fire hydrant to the road
+          // Nearest fire hydrant
           var nearestHydrant = null, minHydrantDist = Infinity;
           fireHydrants.forEach(function(hydrant) {
               var d = getDistanceMiles(road.lat, road.lon, hydrant.lat, hydrant.lon);
               if (d < minHydrantDist) { minHydrantDist = d; nearestHydrant = hydrant; }
           });
-          var hydrantInfo = "";
-          if (nearestHydrant) {
-              var bearingHydrant = getBearing(road.lat, road.lon, nearestHydrant.lat, nearestHydrant.lon);
-              var directionHydrant = getCardinalDirection(bearingHydrant);
-              hydrantInfo = minHydrantDist.toFixed(1) + " mi " + directionHydrant;
-          } else {
-              hydrantInfo = "N/A";
-          }
+          var hydrantInfo = nearestHydrant ? 
+              (minHydrantDist.toFixed(1) + " mi " + getCardinalDirection(getBearing(nearestHydrant.lat, nearestHydrant.lon, road.lat, road.lon))) : "N/A";
           
           html += "<div class='road-item' onclick='zoomToRoad(" + road.lat + ", " + road.lon + ")'>";
           html += "<span class='road-code'>" + code + "</span> " + road.name;
@@ -424,28 +397,28 @@ out center;`;
       document.getElementById("roadsContainer").innerHTML = html;
   }
 
-  // Function to zoom to a road when its item is clicked and draw a route from the user's current location;
-  // Also automatically minimizes (hides) the road list panel.
+  // Zoom to a road, draw a route from current location, display the distance along the route,
+  // and automatically minimize (hide) the road list panel.
   function zoomToRoad(lat, lon) {
       map.setView([lat, lon], 18);
       if (currentLocationMarker) {
           var currentLatLng = currentLocationMarker.getLatLng();
           if (currentRouteLine) { map.removeLayer(currentRouteLine); }
           currentRouteLine = L.polyline([currentLatLng, [lat, lon]], { color: "orange", weight: 3 }).addTo(map);
+          var distance = getDistanceMiles(currentLatLng.lat, currentLatLng.lng, lat, lon).toFixed(1);
+          currentRouteLine.bindTooltip(distance + " mi", { permanent: true, direction: 'center' }).openTooltip();
       }
       L.circleMarker([lat, lon], { radius: 6, color: "#FF0000" }).addTo(map)
           .bindPopup("Road Location").openPopup();
-      // Automatically hide the road list panel when a road is clicked
       document.getElementById("roadList").style.display = "none";
       document.getElementById("roadListToggle").style.display = "block";
   }
 
-  // Toggle button inside the road list panel to close/hide it
+  // Toggle button inside road list to hide the panel
   document.getElementById("toggleRoadListBtn").addEventListener("click", function() {
       document.getElementById("roadList").style.display = "none";
       document.getElementById("roadListToggle").style.display = "block";
   });
-
   // Fixed button to show the road list when minimized
   document.getElementById("roadListToggle").addEventListener("click", function() {
       document.getElementById("roadList").style.display = "block";
